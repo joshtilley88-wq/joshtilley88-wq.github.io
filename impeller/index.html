@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Impeller Quoter</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; connect-src 'self' https://api.openai.com https://cdnjs.cloudflare.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Impeller Quoter">
+<meta name="theme-color" content="#1f3a5f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1>Impeller Quoter<small id="hdrRef">Fabricated centrifugal impellers · AUD</small></h1>
+  <div class="chip" id="hdrTotal">ex GST<b>-</b></div>
+  <button class="iconbtn" id="btnSettings" aria-label="Settings" title="Settings">⚙</button>
+</header>
+<main>
+  <section class="view" id="view-drawing"></section>
+  <section class="view" id="view-check"></section>
+  <section class="view" id="view-cost"></section>
+  <section class="view" id="view-params"></section>
+  <section class="view" id="view-ai"></section>
+  <section class="view" id="view-report"></section>
+</main>
+<nav class="tabs" id="tabs">
+  <button data-view="drawing"><span>📄</span>Drawing</button>
+  <button data-view="check"><span>✔︎</span>Check</button>
+  <button data-view="cost"><span>$</span>Cost</button>
+  <button data-view="params"><span>⚙︎</span>Params</button>
+  <button data-view="ai"><span>💬</span>AI</button>
+  <button data-view="report"><span>🖨</span>Report</button>
+</nav>
+<div class="overlay" id="settings"><div class="sheet" id="settingsSheet"></div></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+<script src="js/defaults.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

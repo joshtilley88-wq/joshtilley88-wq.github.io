@@ -35,6 +35,7 @@ async function render() {
   renderNav();
   const view = $('#view');
   try { await fn(view, parts.slice(1), q); } catch (e) { console.error(e); view.innerHTML = `<div class="card"><h2>Something went wrong</h2><p class="muted">${esc(e.message)}</p></div>`; }
+  try { renderBanners(); } catch (e) { console.warn(e); }
   window.scrollTo(0, 0);
 }
 
@@ -124,10 +125,15 @@ document.addEventListener('click', e => { const a = e.target.closest('a[href^="#
 async function boot() {
   const h = location.hash;
   if (/^#(sign|q)=/.test(h)) { await PUBLIC.render(h); return; }   // client-facing pages: never touch the owner's data
-  try { await DB.open(); await loadAll(); }
+  try { await DB.open(); await loadAll(); await loadDevice(); }
   catch (e) { $('#view').innerHTML = `<div class="card"><h2>Storage unavailable</h2><p>This browser blocked local storage (private mode?). ${esc(e.message || e)}</p></div>`; return; }
   window.addEventListener('hashchange', () => { if (/^#(sign|q)=/.test(location.hash)) { location.reload(); return; } render(); });
-  render();
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });
+  await render();
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });
+  // background jobs: Drive auto-backup + due-email notification, on open and whenever the app comes back to the front
+  const wake = () => { autoBackup().catch(() => { }); dueNotifyCheck().catch(() => { }); };
+  wake();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
+  window.addEventListener('focus', wake);
 }
 boot();

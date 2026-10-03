@@ -34,7 +34,7 @@ V.dashboard = async view => {
   const inc = months.map(k => S.payments.filter(p => monthKey(p.date) === k).reduce((a, p) => a + num(p.amount), 0)); const mx = Math.max(1, ...inc);
   const recent = [...S.invoices].sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || '') || (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 6);
   const name = S.settings.business.name;
-  view.innerHTML = `${demoBanner()}${pageH(`Hi${name ? ', ' + esc(name) : ''}`, new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), `<a class="btn pri" href="#/invoice/new">${icon('plus')} New invoice</a>`)}
+  view.innerHTML = `${demoBanner()}${notifyPromptHTML()}${pageH(`Hi${name ? ', ' + esc(name) : ''}`, new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), `<a class="btn pri" href="#/invoice/new">${icon('plus')} New invoice</a>`)}
   <div class="card alert-card" style="margin-bottom:18px">
     <div class="card-h"><span class="ic">${icon('mail')}</span><div><h2>Emails to send ${due.length ? `<span class="badge ${due.some(e => e.scheduledDate < t) ? 'bad' : ''}">${due.length}</span>` : ''}</h2><div class="small muted">Due today or overdue. Open each one, send it, then mark it sent.</div></div><div class="spacer"></div><a class="btn ghost sm" href="#/outbox">View outbox</a></div>
     ${due.length ? due.map(e => outboxRow(e)).join('') : `<div class="empty" style="padding:14px">${icon('check')} All caught up. Nothing due today.</div>`}
@@ -60,6 +60,7 @@ V.dashboard = async view => {
   </div>`;
   if (window.innerWidth < 1000) $('#dash-top').style.gridTemplateColumns = '1fr';
   renderCashflowCard($('#cf-card'), true);
+  bindNotifyPrompt(view);
 };
 function invRow(i) {
   const c = invCalc(i), st = invStatus(i, c), cu = byId('customers', i.customerId);

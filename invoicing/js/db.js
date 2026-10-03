@@ -165,10 +165,12 @@ async function exportBackup() {
 }
 async function importBackup(o, replace = true) {
   if (!o || o.app !== 'invoicing') throw new Error('This is not an Invoicing backup file.');
+  const dev = await DB.get('settings', 'device');   // this device's Drive/notification state is not part of a backup
   if (replace) for (const c of COLS) await DB.clear(c);
+  if (dev) await DB.put('settings', dev);
   if (o.settings) { await DB.put('settings', Object.assign(o.settings, { id: 'main' })); }
   for (const c of DATA_COLS) for (const r of o[c] || []) await DB.put(c, r);
   for (const f of o.files || []) await DB.put('files', { id: f.id, name: f.name, type: f.type, blob: dataURLtoBlob(f.dataURL) });
   await loadAll();
 }
-async function clearAll() { for (const c of COLS) await DB.clear(c); await loadAll(); }
+async function clearAll() { const dev = await DB.get('settings', 'device'); for (const c of COLS) await DB.clear(c); if (dev) await DB.put('settings', dev); await loadAll(); }

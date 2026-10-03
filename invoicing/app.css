@@ -141,7 +141,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--pink); width: 18px
 .modal-h { display: flex; align-items: center; gap: 10px; padding: 20px 22px 8px; position: sticky; top: 0; background: #fff; z-index: 1; }
 .modal-b { padding: 8px 22px 16px; }
 .modal-f { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 22px 20px; flex-wrap: wrap; position: sticky; bottom: 0; background: #fff; border-top: 1px solid var(--line); }
-.toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--plum); color: #fff; padding: 12px 20px; border-radius: 999px; z-index: 80; box-shadow: var(--sh); font-weight: 550; max-width: 90vw; }
+.toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--plum); color: #fff; padding: 12px 20px; border-radius: 999px; z-index: 80; box-shadow: var(--sh); font-weight: 550; max-width: 90vw; pointer-events: none; }
 
 /* charts */
 .cf-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--ink); margin: 14px 0 6px; }
@@ -237,3 +237,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--pink); width: 18px
   .card { box-shadow: none; border: 1px solid #eee; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* backup reminder / reconnect banners */
+.bk-banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.bk-banner .grow { flex: 1; min-width: 180px; }
+#bk-reconnect { cursor: pointer; color: var(--pink-d); }

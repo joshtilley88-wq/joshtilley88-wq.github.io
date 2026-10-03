@@ -498,13 +498,15 @@ V.settings = async (view, _, q) => {
     let est = ''; try { const e = await navigator.storage.estimate(); est = `Using about ${(e.usage / 1048576).toFixed(1)} MB of browser storage.`; } catch (e) { }
     let pers = false; try { pers = await navigator.storage.persisted(); } catch (e) { }
     body.innerHTML = `<div class="grid g2" style="align-items:start"><div class="card"><h2>Your data</h2><p class="small muted">Everything (customers, invoices, receipts, logo) is stored <b>only in this browser on this device</b>. Nothing is sent to a server. If you clear your browser data, or open the app in another browser or device, it starts empty, so export a backup regularly.</p>
-      <p class="small">${est} ${pers ? 'Storage is marked persistent ✓' : '<button class="btn sm" id="st-pers">Ask browser to keep data permanently</button>'}${st.lastBackup ? `<br>Last backup: ${fmtD(st.lastBackup)}` : ''}</p>
+      <p class="small">${est} ${pers ? 'Storage is marked persistent ✓' : '<button class="btn sm" id="st-pers">Ask browser to keep data permanently</button>'}${lastAnyBackup() ? `<br>Last backup: ${new Date(lastAnyBackup()).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: DEV.lastLocalAt || DEV.drive.lastAt ? 'short' : undefined })}` : ''}</p>
       <div class="row"><button class="btn pri" id="st-exp">${icon('download')} Export backup</button><button class="btn" id="st-imp">${icon('upload')} Import backup</button></div>
       <p class="tiny muted">The backup is one JSON file, including receipt photos. Keep it somewhere private because it contains your customer and financial data.</p></div>
       <div class="card"><h2>Demo &amp; reset</h2><p class="small muted">Load fake sample data to try everything out. This replaces whatever is in the app now.</p>
-      <div class="row"><button class="btn" id="st-demo">${icon('eye')} Load demo data</button><button class="btn danger" id="st-clear">${icon('trash')} Clear all data</button></div></div></div>`;
+      <div class="row"><button class="btn" id="st-demo">${icon('eye')} Load demo data</button><button class="btn danger" id="st-clear">${icon('trash')} Clear all data</button></div></div>
+      ${driveCardHTML()}${notifyCardHTML()}</div>`;
+    bindDataCards(body);
     if ($('#st-pers')) $('#st-pers').onclick = async () => { const ok = await navigator.storage.persist(); toast(ok ? 'Storage is now persistent' : 'Browser declined (installing the app usually helps)'); render(); };
-    $('#st-exp').onclick = async () => { S.settings.lastBackup = today(); await saveSettings(); download(`invoicing-backup-${today()}.json`, JSON.stringify(await exportBackup()), 'application/json'); };
+    $('#st-exp').onclick = async () => { await localBackup(); toast('Backup downloaded'); render(); };
     $('#st-imp').onclick = async () => { const f = await pickFile('.json,application/json'); if (!f) return; let o; try { o = JSON.parse(await readText(f)); } catch (e) { toast('Not a valid backup file'); return; }
       if (!await confirmBox(`Replace ALL current data with the backup from ${esc((o.exportedAt || '').slice(0, 10))}?`, 'Replace')) return; try { await importBackup(o); toast('Backup restored'); go('dashboard'); } catch (e) { toast(e.message); } };
     $('#st-demo').onclick = async () => { if (S.invoices.length + S.customers.length && !await confirmBox('Replace ALL current data with demo data?', 'Load demo')) return; await loadDemo(); toast('Demo data loaded'); go('dashboard'); };

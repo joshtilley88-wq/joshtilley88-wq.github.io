@@ -8,7 +8,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Box Quoter">
 <meta name="theme-color" content="#1f3a5f">
-<link rel="manifest" href='data:application/manifest+json,{"name":"Box Quoter","short_name":"Box Quoter","display":"standalone","background_color":"%23f3f5f8","theme_color":"%231f3a5f","start_url":"."}'>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif;background:#f3f5f8;color:#1b2430}
@@ -85,6 +87,7 @@ function calc(){
 }
 ['L','W','H','T'].forEach(id=>$(id).addEventListener('input',calc));
 calc();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
 </html>

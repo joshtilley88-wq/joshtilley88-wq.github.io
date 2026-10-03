@@ -495,10 +495,14 @@
   }
   async function runExtract() {
     if (!apiKey()) { ui.err = 'Add your OpenAI API key in Settings (⚙) first, or fill the data in by hand on the Check tab.'; render(); return; }
-    ui.err = ''; ui.msg = ''; ui.busy = 'Sending ' + pages.length + ' page(s) to ' + S.model + '… this can take a minute.'; render();
+    ui.err = ''; ui.msg = '';
+    const t0 = Date.now(); let got = 0, lock = null;
+    const tick = () => { const sec = Math.round((Date.now() - t0) / 1000); ui.busy = `Reading drawing with ${S.model}… ${sec}s${got ? ' · receiving data' : ''}. Keep the app open and the screen on.`; render(); };
+    tick(); const timer = setInterval(tick, 1000);
+    try { if (navigator.wakeLock) lock = await navigator.wakeLock.request('screen'); } catch (_) {}
     try {
-      const imgs = pages.map(p => p.canvas.toDataURL('image/jpeg', 0.9));
-      const { data, usage } = await AI.extract(imgs, { key: apiKey(), model: S.model, detail: S.detail });
+      const imgs = pages.map(p => p.canvas.toDataURL('image/jpeg', 0.85));
+      const { data, usage } = await AI.extract(imgs, { key: apiKey(), model: S.model, detail: S.detail }, n => { got = n; }).finally(() => { clearInterval(timer); try { lock && lock.release(); } catch (_) {} });
       recordUsage('extraction', usage);
       applyExtraction(data);
       ui.msg = `Extracted ${Q.components.length} component(s) and ${Q.welds.length} weld(s). Check every flagged field.`;

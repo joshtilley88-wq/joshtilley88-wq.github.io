@@ -23,6 +23,41 @@
     return `OpenAI error ${status}: ${m}`;
   }
 
+  // Streaming call: keeps the connection alive on phones while the model thinks, and retries once if the network drops.
+  async function callStream(body, s, onProgress) {
+    if (!s.key) throw new AIError('No OpenAI API key set. Open Settings (⚙) and paste your key, or use manual mode.');
+    const req = Object.assign({}, body, { stream: true, stream_options: { include_usage: true } });
+    let lastErr;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let res;
+      try {
+        res = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + s.key }, body: JSON.stringify(req), referrerPolicy: 'no-referrer' });
+      } catch (err) { lastErr = err; continue; }
+      if (!res.ok) { let j = null; try { j = await res.json(); } catch (_) {} const er = new AIError(friendly(res.status, j), j); er.status = res.status; throw er; }
+      try {
+        const reader = res.body.getReader(), dec = new TextDecoder();
+        let buf = '', content = '', refusal = '', finish = null, usage = null, model = '';
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+            if (!line.startsWith('data:')) continue;
+            const d = line.slice(5).trim(); if (d === '[DONE]') continue;
+            let j; try { j = JSON.parse(d); } catch (_) { continue; }
+            if (j.model) model = j.model;
+            if (j.usage) usage = j.usage;
+            const c = j.choices && j.choices[0];
+            if (c) { if (c.delta && c.delta.content) { content += c.delta.content; onProgress && onProgress(content.length); } if (c.delta && c.delta.refusal) refusal += c.delta.refusal; if (c.finish_reason) finish = c.finish_reason; }
+          }
+        }
+        return { model, usage: usage || {}, choices: [{ message: { content, refusal: refusal || null }, finish_reason: finish }] };
+      } catch (err) { lastErr = err; continue; }
+    }
+    throw new AIError('Lost the connection to OpenAI while it was reading the drawing (tried twice). Keep the app open and the screen on, check your signal, then try again.', String(lastErr));
+  }
+
   async function call(body, s) {
     if (!s.key) throw new AIError('No OpenAI API key set. Open Settings (⚙) and paste your key, or use manual mode.');
     if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new AIError('You appear to be offline. AI features need a connection; manual costing still works.');
@@ -89,18 +124,19 @@ Return JSON matching the schema:
 - welds: each weld symbol or note. type fillet / full_penetration / butt; leg_mm for fillets; length_each_mm = length of one joint if derivable; count = number of such joints; sides = 1 or 2 (both sides / all-round). null when not stated.
 - general_notes: tolerances, standards, notes. questions: things an estimator must confirm (missing balance grade, coating, NDT, ambiguous dimensions).`;
 
-  async function extract(images, s) {
+  async function extract(images, s, onProgress) {
     const content = [{ type: 'text', text: 'Extract the impeller drawing data. ' + images.length + ' page image(s) follow.' }]
       .concat(images.map(url => ({ type: 'image_url', image_url: { url, detail: s.detail || 'high' } })));
     const base = { model: s.model, messages: [{ role: 'system', content: EXTRACT_PROMPT }, { role: 'user', content }], max_completion_tokens: 12000 };
+    if (/^gpt-5/i.test(s.model || '')) base.reasoning_effort = 'low';
     let json;
     try {
-      json = await call(Object.assign({}, base, { response_format: { type: 'json_schema', json_schema: { name: 'impeller_drawing', strict: true, schema: SCHEMA } } }), s);
+      json = await callStream(Object.assign({}, base, { response_format: { type: 'json_schema', json_schema: { name: 'impeller_drawing', strict: true, schema: SCHEMA } } }), s, onProgress);
     } catch (e) {
       // Older models without Structured Outputs: fall back to JSON mode.
       if (e.status === 400 && /response_format|json_schema|structured/i.test(e.message)) {
         base.messages[0].content += '\nRespond with a single JSON object only. Schema: ' + JSON.stringify(SCHEMA);
-        json = await call(Object.assign({}, base, { response_format: { type: 'json_object' } }), s);
+        json = await callStream(Object.assign({}, base, { response_format: { type: 'json_object' } }), s, onProgress);
       } else throw e;
     }
     const msg = json.choices[0].message || {};

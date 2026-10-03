@@ -242,3 +242,5 @@ input[type=checkbox], input[type=radio] { accent-color: var(--pink); width: 18px
 .bk-banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .bk-banner .grow { flex: 1; min-width: 180px; }
 #bk-reconnect { cursor: pointer; color: var(--pink-d); }
+.dr-prog { height: 6px; border-radius: 6px; background: var(--lav-tt); margin-top: 10px; overflow: hidden; }
+.dr-prog > div { height: 100%; width: 0; background: var(--grad); transition: width .2s; }

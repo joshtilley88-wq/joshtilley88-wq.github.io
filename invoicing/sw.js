@@ -1,6 +1,6 @@
 /* Invoicing service worker: offline app shell. Network-first for site files.
  * Bump C on every deploy. All user data lives in IndexedDB, never here. */
-const C = 'invoicing-v2';
+const C = 'invoicing-v3';
 const F = ['./', './index.html', './app.css', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png',
   './fonts/inter-latin-wght.woff2', './js/vendor/chart.umd.min.js', './js/config.js', './js/util.js', './js/db.js', './js/views.js', './js/tools.js', './js/backup.js', './js/app.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(F))); self.skipWaiting(); });

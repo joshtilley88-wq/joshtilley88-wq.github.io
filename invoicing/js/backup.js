@@ -41,11 +41,6 @@ function pruneList(files, keep) {
   ours.sort((a, b) => (b.createdTime || '').localeCompare(a.createdTime || '') || (b.name || '').localeCompare(a.name || ''));
   return ours.slice(keep);
 }
-function multipartBody(meta, json) {
-  const boundary = 'inv' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${json}\r\n--${boundary}--`;
-  return { boundary, body, type: `multipart/related; boundary=${boundary}` };
-}
 
 /* ---------- Google auth (token model) ---------- */
 class AuthError extends Error { }
@@ -122,8 +117,52 @@ async function driveList(folderId) {
 }
 async function aboutUser() { try { const a = await (await gapi(`${DRIVE_API}/about?fields=user(emailAddress)`)).json(); return a.user?.emailAddress || ''; } catch (e) { return ''; } }
 
+/* Resumable upload (works for any size, e.g. backups full of receipt photos).
+ * 1) POST metadata -> session URI (Location). 2) PUT 4 MiB chunks with Content-Range; Drive answers 308 + Range
+ * until the last chunk, then 200/201 + file. On a network error or 5xx for a chunk, ask the session how much it
+ * has (empty PUT, "Content-Range: bytes STAR/total") and resume from there. One retry per chunk. */
+const UP_CHUNK = 16 * 262144;   // 4 MiB (must be a multiple of 256 KiB)
+const netMsg = e => (!e || e instanceof TypeError || /fetch|network/i.test(e.message || '')) ? 'network connection lost' : e.message;
+const rangeEnd = r => { const m = /bytes=0-(\d+)/.exec(r.headers.get('Range') || ''); return m ? +m[1] + 1 : null; };
+async function resumableUpload(meta, bytes, onProgress = () => { }) {
+  const total = bytes.length;
+  const init = await gapi(`${DRIVE_UP}/files?uploadType=resumable&fields=id,name,createdTime`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/json', 'X-Upload-Content-Length': String(total) }, body: JSON.stringify(meta) });
+  const session = init.headers.get('Location'); if (!session) throw new Error('Google Drive didn\'t start the upload. Please try again.');
+  const put = (range, body) => fetch(session, { method: 'PUT', headers: { Authorization: 'Bearer ' + GD.token, 'Content-Range': range }, body });
+  const fail = async r => {
+    if (r.status === 401) { GD.token = ''; throw new AuthError('Google session expired'); }
+    if (r.status === 404 || r.status === 410) throw new Error('Upload to Google Drive failed (the upload session expired). Your data is safe on this device. Please try again.');
+    let m = ''; try { m = (await r.json()).error?.message || ''; } catch (e) { }
+    throw new Error(`Upload to Google Drive failed (${r.status}${m ? ': ' + m : ''}). Your data is safe on this device. Please try again.`);
+  };
+  let off = 0; onProgress(0);
+  while (true) {
+    const end = Math.min(off + UP_CHUNK, total);
+    let r;
+    try { r = await put(total ? `bytes ${off}-${end - 1}/${total}` : 'bytes */0', bytes.subarray(off, end)); if (r.status >= 500) throw new Error('server error ' + r.status); }
+    catch (e) {
+      // retry once: find out what Drive already has, then carry on from there
+      await new Promise(t => setTimeout(t, 1000));
+      let st;
+      try { st = await put(`bytes */${total}`); } catch (e2) { throw new Error(`Upload to Google Drive failed (${netMsg(e)}). Your data is safe on this device. Please try again.`); }
+      if (st.status === 200 || st.status === 201) { onProgress(100); return st.json(); }
+      if (st.status !== 308) await fail(st);
+      const got = rangeEnd(st); if (got !== null) off = got;   // no Range = that chunk wasn't stored, resend it
+      const end2 = Math.min(off + UP_CHUNK, total);
+      try { r = await put(`bytes ${off}-${end2 - 1}/${total}`, bytes.subarray(off, end2)); } catch (e3) { throw new Error(`Upload to Google Drive failed (${netMsg(e3)}). Your data is safe on this device. Please try again.`); }
+      if (r.status >= 500) await fail(r);
+      if (r.status === 308) { const g = rangeEnd(r); off = g === null ? end2 : g; onProgress(Math.min(99, Math.round(off / total * 100))); continue; }
+    }
+    if (r.status === 200 || r.status === 201) { onProgress(100); return r.json(); }
+    if (r.status !== 308) await fail(r);
+    const g = rangeEnd(r); off = g === null ? end : g;
+    onProgress(Math.min(99, Math.round(off / total * 100)));
+  }
+}
+
 /* full backup: same JSON as Export backup. Returns { name, deleted } */
-async function driveBackupNow({ interactive = false } = {}) {
+async function driveBackupNow({ interactive = false, onProgress = null } = {}) {
+  if (onProgress) GD.onProg = onProgress;
   if (GD.busy) return GD.busy;
   GD.busy = (async () => {
     try {
@@ -131,8 +170,7 @@ async function driveBackupNow({ interactive = false } = {}) {
       const folder = await driveFolder();
       const json = JSON.stringify(await exportBackup());
       const name = backupFileName();
-      const mp = multipartBody({ name, parents: [folder], mimeType: 'application/json', appProperties: { invoicingApp: '1', kind: 'backup' } }, json);
-      const up = await (await gapi(`${DRIVE_UP}/files?uploadType=multipart&fields=id,name,createdTime`, { method: 'POST', headers: { 'Content-Type': mp.type }, body: mp.body })).json();
+      const up = await resumableUpload({ name, parents: [folder], mimeType: 'application/json', appProperties: { invoicingApp: '1', kind: 'backup' } }, new TextEncoder().encode(json), p => GD.onProg && GD.onProg(p));
       let deleted = 0;
       try { for (const f of pruneList(await driveList(folder), DEV.drive.keep)) { await gapi(`${DRIVE_API}/files/${encodeURIComponent(f.id)}`, { method: 'DELETE' }); deleted++; } } catch (e) { console.warn('prune failed', e); }
       Object.assign(DEV.drive, { connected: true, lastAt: new Date().toISOString(), lastName: name, lastError: '' }); await saveDevice();
@@ -140,15 +178,15 @@ async function driveBackupNow({ interactive = false } = {}) {
     } catch (e) {
       if (e instanceof AuthError) GD.needReconnect = !!DEV.drive.connected;
       DEV.drive.lastError = e.message; await saveDevice(); throw e;
-    } finally { GD.busy = null; renderBanners(); }
+    } finally { GD.busy = null; GD.onProg = null; renderBanners(); }
   })();
   return GD.busy;
 }
-async function driveConnect() {
+async function driveConnect(onProgress) {
   try { await GD.auth(true); } catch (e) { DEV.drive.lastError = e.message; await saveDevice(); throw e; }
   DEV.drive.connected = true; DEV.drive.lastError = ''; await saveDevice();
   const em = await aboutUser(); if (em) { DEV.drive.email = em; await saveDevice(); }
-  return driveBackupNow({ interactive: true });
+  return driveBackupNow({ interactive: true, onProgress });
 }
 async function driveDisconnect() {
   try { if (GD.token && window.google?.accounts?.oauth2?.revoke) google.accounts.oauth2.revoke(GD.token, () => { }); } catch (e) { }
@@ -229,6 +267,7 @@ function driveCardHTML() {
     <p class="small muted">Backs up automatically to a folder called <b>${DRIVE_FOLDER}</b> in your Google Drive. The app can only see files it created there.</p>
     <p class="small" id="dr-status">${c ? `<b style="color:var(--ok, #2E9E6A)">● Connected</b>${d.email ? ' as ' + esc(d.email) : ''}` : '<b>Not connected</b>'}<br>Last Drive backup: ${d.lastAt ? new Date(d.lastAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' }) : 'never'}</p>${d.lastError ? `<div class="note pink" id="dr-err" style="margin-bottom:12px">${icon('alert')} ${esc(d.lastError)}</div>` : ''}
     <div class="row">${c ? `<button class="btn pri" id="dr-now">${icon('upload')} Back up now</button><button class="btn" id="dr-restore">${icon('download')} Restore from Drive</button><button class="btn ghost" id="dr-disc">Disconnect</button>` : `<button class="btn pri" id="dr-connect">${icon('link')} Connect Google Drive</button>`}</div>
+    <div class="dr-prog" id="dr-prog" hidden><div></div></div>
     <div class="grid g2" style="margin-top:12px"><label class="f">Back up<select id="dr-freq">${opt(1, 'Every day')}${opt(3, 'Every 3 days')}${opt(7, 'Weekly')}</select></label>
     <label class="f">Keep last<input type="number" id="dr-keep" min="1" max="100" value="${+d.keep || 10}"></label></div>
     <p class="tiny muted">Backs up when you open the app and the last backup is older than this. Older backups beyond the number kept are deleted (only this app's backup files).</p></div>`;
@@ -242,9 +281,10 @@ function notifyCardHTML() {
 }
 function bindDataCards(root) {
   const q = s => $(s, root);
-  const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e instanceof AuthError ? 'Couldn\'t connect to Google Drive (see the note on the card)' : e.message); } finally { render(); } };
-  if (q('#dr-connect')) q('#dr-connect').onclick = e => busy(e.currentTarget, async () => { const r = await driveConnect(); toast('Connected. Backed up to Google Drive'); });
-  if (q('#dr-now')) q('#dr-now').onclick = e => busy(e.currentTarget, async () => { await driveBackupNow({ interactive: true }); toast('Backed up to Google Drive'); });
+  const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e instanceof AuthError ? 'Couldn\'t connect to Google Drive (see the note on the card)' : 'Backup failed (see the note on the card)'); } finally { render(); } };
+  if (q('#dr-connect')) q('#dr-connect').onclick = e => { const b = e.currentTarget; busy(b, async () => { await driveConnect(prog(b)); toast('Connected. Backed up to Google Drive'); }); };
+  const prog = btn => p => { btn.innerHTML = `${icon('upload')} Backing up… ${p}%`; const s = q('#dr-prog'); if (s) { s.hidden = false; s.firstElementChild.style.width = p + '%'; } };
+  if (q('#dr-now')) q('#dr-now').onclick = e => { const b = e.currentTarget; b.innerHTML = `${icon('upload')} Backing up…`; busy(b, async () => { await driveBackupNow({ interactive: true, onProgress: prog(b) }); toast('Backed up to Google Drive'); }); };
   if (q('#dr-restore')) q('#dr-restore').onclick = () => driveRestorePicker();
   if (q('#dr-disc')) q('#dr-disc').onclick = async () => { if (await confirmBox('Stop automatic Google Drive backups on this device? Backups already in Drive are kept.', 'Disconnect', false)) { await driveDisconnect(); render(); } };
   if (q('#dr-freq')) q('#dr-freq').onchange = async e => { DEV.drive.freqDays = +e.target.value; await saveDevice(); toast('Saved'); };

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Box Quoter</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Box Quoter">
+<meta name="theme-color" content="#1f3a5f">
+<link rel="manifest" href='data:application/manifest+json,{"name":"Box Quoter","short_name":"Box Quoter","display":"standalone","background_color":"%23f3f5f8","theme_color":"%231f3a5f","start_url":"."}'>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif;background:#f3f5f8;color:#1b2430}
+  header{background:#1f3a5f;color:#fff;padding:18px 16px 14px;padding-top:max(18px,env(safe-area-inset-top))}
+  header h1{margin:0;font-size:22px} header p{margin:4px 0 0;opacity:.8;font-size:14px}
+  main{padding:16px;max-width:520px;margin:auto}
+  .card{background:#fff;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  label{display:block;font-size:14px;color:#55606e;margin:10px 0 4px}
+  input{width:100%;font-size:22px;padding:12px;border:1px solid #cfd6df;border-radius:10px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+  .total{font-size:40px;font-weight:700;color:#1f3a5f;margin:4px 0}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  td{padding:6px 0;border-bottom:1px solid #eef1f4} td:last-child{text-align:right}
+  .muted{font-size:12px;color:#7a8592;line-height:1.5}
+  .err{color:#b00020;font-size:14px}
+</style>
+</head>
+<body>
+<header><h1>Sheet Metal Box Quoter</h1><p>Mild steel grade 250, fully welded box</p></header>
+<main>
+  <div class="card">
+    <div class="grid">
+      <div><label for="L">Length (mm)</label><input id="L" type="number" inputmode="decimal" value="300"></div>
+      <div><label for="W">Width (mm)</label><input id="W" type="number" inputmode="decimal" value="200"></div>
+      <div><label for="H">Height (mm)</label><input id="H" type="number" inputmode="decimal" value="150"></div>
+      <div><label for="T">Thickness (mm)</label><input id="T" type="number" inputmode="decimal" value="3"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="muted">Box cost (AUD, ex GST)</div>
+    <div class="total" id="total">$0.00</div>
+    <div id="err" class="err"></div>
+    <table id="tbl"></table>
+  </div>
+  <div class="card muted">
+    <b>Assumptions (placeholders, change them in the file):</b><br>
+    6 faces, all 12 edges welded. Steel density is 7,850 kg/m³ at $2.50/kg, plus 10% scrap.
+    Welding runs at 5 mm/s (MIG) at $90/hr labour, and there's a $25 setup charge.
+    Cutting, finishing, GST and markup aren't included.
+  </div>
+</main>
+<script>
+// ---- Pricing parameters (placeholders, edit here) ----
+const P = {
+  density: 7850,        // kg/m3, mild steel grade 250
+  steelPerKg: 2.50,     // AUD per kg
+  scrap: 0.10,          // 10% offcut allowance
+  weldRate: 5,          // mm per second (MIG fillet)
+  labourPerHr: 90,      // AUD per hour
+  setup: 25             // AUD flat per box
+};
+const $ = id => document.getElementById(id);
+const money = n => '$' + n.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
+function calc(){
+  const L=+$('L').value, W=+$('W').value, H=+$('H').value, T=+$('T').value;
+  if(!(L>0&&W>0&&H>0&&T>0)){ $('err').textContent='Enter all four values.'; $('total').textContent='-'; $('tbl').innerHTML=''; return; }
+  $('err').textContent='';
+  const areaMm2 = 2*(L*W + L*H + W*H);
+  const massKg = areaMm2 * T * 1e-9 * P.density;
+  const material = massKg * (1+P.scrap) * P.steelPerKg;
+  const weldMm = 4*(L+W+H);
+  const weldMin = weldMm / P.weldRate / 60;
+  const welding = weldMin/60 * P.labourPerHr;
+  const total = material + welding + P.setup;
+  $('total').textContent = money(total);
+  $('tbl').innerHTML = `
+    <tr><td>Sheet area</td><td>${(areaMm2/1e6).toFixed(3)} m²</td></tr>
+    <tr><td>Steel weight</td><td>${massKg.toFixed(2)} kg</td></tr>
+    <tr><td>Material (+10% scrap)</td><td>${money(material)}</td></tr>
+    <tr><td>Weld length</td><td>${(weldMm/1000).toFixed(2)} m</td></tr>
+    <tr><td>Weld time at ${P.weldRate} mm/s</td><td>${weldMin.toFixed(1)} min</td></tr>
+    <tr><td>Welding labour</td><td>${money(welding)}</td></tr>
+    <tr><td>Setup</td><td>${money(P.setup)}</td></tr>`;
+}
+['L','W','H','T'].forEach(id=>$(id).addEventListener('input',calc));
+calc();
+</script>
+</body>
+</html>

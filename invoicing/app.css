@@ -244,3 +244,4 @@ input[type=checkbox], input[type=radio] { accent-color: var(--pink); width: 18px
 #bk-reconnect { cursor: pointer; color: var(--pink-d); }
 .dr-prog { height: 6px; border-radius: 6px; background: var(--lav-tt); margin-top: 10px; overflow: hidden; }
 .dr-prog > div { height: 100%; width: 0; background: var(--grad); transition: width .2s; }
+.sync-pill { color: var(--muted); } .sync-pill[data-state="error"], .sync-pill[data-state="signed-out"] { color: var(--bad); } .sync-pill[data-state="offline"] { color: var(--pink-d); }

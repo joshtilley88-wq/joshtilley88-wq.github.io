@@ -438,7 +438,7 @@ function editExpenseModal(x) {
   $('#xe-amt', m).oninput = autoG; $('#xe-auto', m).onchange = () => { if ($('#xe-auto', m).checked) autoG(); else $('#xe-gst', m).value = '0.00'; };
   const showPrev = async () => {
     const p = $('#xe-prev', m); let blob = null, type = '';
-    if (newFile) { blob = newFile.blob; type = newFile.type; } else if (o.fileId && !dropFile) { const f = await DB.get('files', o.fileId); if (f) { blob = f.blob; type = f.type; } }
+    if (newFile) { blob = newFile.blob; type = newFile.type; } else if (o.fileId && !dropFile) { p.innerHTML = 'Loading receipt…'; const f = await fileGet(o.fileId); if (f) { blob = f.blob; type = f.type; } else if (o.fileId) { p.innerHTML = 'Receipt not available offline yet'; return; } }
     $('#xe-rm', m).hidden = !blob;
     if (!blob) { p.innerHTML = 'No receipt attached'; return; }
     const u = URL.createObjectURL(blob);
@@ -457,12 +457,12 @@ function editExpenseModal(x) {
     const amount = r2(num($('#xe-amt', m).value)); const sup = $('#xe-sup', m).value.trim();
     if (!sup || !amount) { toast('Enter supplier and amount'); return; }
     Object.assign(o, { date: $('#xe-date', m).value || today(), supplier: sup, category: $('#xe-cat', m).value.trim() || 'Other', amount, gst: r2(num($('#xe-gst', m).value)), gstIncl: $('#xe-auto', m).checked, notes: $('#xe-notes', m).value.trim() });
-    if ((dropFile || newFile) && o.fileId) { await DB.del('files', o.fileId); o.fileId = ''; }
-    if (newFile) { o.fileId = uid(); await DB.put('files', { id: o.fileId, blob: newFile.blob, type: newFile.type, name: newFile.name }); }
+    if ((dropFile || newFile) && o.fileId) { await fileDel(o.fileId); o.fileId = ''; }
+    if (newFile) { o.fileId = uid(); await filePut({ id: o.fileId, blob: newFile.blob, type: newFile.type, name: newFile.name }); }
     if (!x) o.createdAt = new Date().toISOString();
     await save('expenses', o); closeModal(); toast('Expense saved'); render();
   };
-  if (x) $('#xe-del', m).onclick = async () => { if (await confirmBox(`Delete expense from ${esc(x.supplier)} (${money(x.amount)})?`)) { if (x.fileId) await DB.del('files', x.fileId); await remove('expenses', x.id); render(); } };
+  if (x) $('#xe-del', m).onclick = async () => { if (await confirmBox(`Delete expense from ${esc(x.supplier)} (${money(x.amount)})?`)) { if (x.fileId) await fileDel(x.fileId); await remove('expenses', x.id); render(); } };
 }
 
 /* ======================= OUTBOX ======================= */

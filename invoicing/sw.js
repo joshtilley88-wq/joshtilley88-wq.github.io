@@ -1,8 +1,8 @@
 /* Invoicing service worker: offline app shell. Network-first for site files.
  * Bump C on every deploy. All user data lives in IndexedDB, never here. */
-const C = 'invoicing-v3';
+const C = 'invoicing-v4';
 const F = ['./', './index.html', './app.css', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png',
-  './fonts/inter-latin-wght.woff2', './js/vendor/chart.umd.min.js', './js/config.js', './js/util.js', './js/db.js', './js/views.js', './js/tools.js', './js/backup.js', './js/app.js'];
+  './fonts/inter-latin-wght.woff2', './js/vendor/chart.umd.min.js', './js/config.js', './js/util.js', './js/db.js', './js/views.js', './js/tools.js', './js/backup.js', './js/sync.js', './js/vendor/supabase.js', './js/app.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(F))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x.startsWith('invoicing-') && x !== C).map(x => caches.delete(x))))); self.clients.claim(); });
 self.addEventListener('fetch', e => {

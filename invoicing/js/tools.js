@@ -464,7 +464,7 @@ async function runImport(type, recs, opt) {
 /* ======================= SETTINGS ======================= */
 V.settings = async (view, _, q) => {
   const tab = q.get('tab') || 'business'; const st = S.settings, b = st.business;
-  const tabs = [['business', 'Business'], ['invoices', 'Invoices & numbering'], ['emails', 'Email templates'], ['categories', 'Expense categories'], ['data', 'Data & backup']];
+  const tabs = [['business', 'Business'], ['invoices', 'Invoices & numbering'], ['emails', 'Email templates'], ['categories', 'Expense categories'], ['data', 'Data & backup'], ...(cloudEnabled() ? [['cloud', 'Cloud sync']] : [])];
   view.innerHTML = `${demoBanner()}${pageH('Settings')}<div class="tabs">${tabs.map(([k, l]) => `<button data-t="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="st-body"></div>`;
   $$('.tabs button', view).forEach(x => x.onclick = () => go('settings?tab=' + x.dataset.t));
   const body = $('#st-body');
@@ -491,6 +491,7 @@ V.settings = async (view, _, q) => {
       <p class="small muted">Next invoice will be <b>${esc(nextNumber('invoice').number)}</b>. Numbers already used are skipped automatically.</p>${saveBtn}</div>`;
     bindSave();
   } else if (tab === 'emails') templatesEditor(body);
+  else if (tab === 'cloud') await cloudTab(body);
   else if (tab === 'categories') {
     body.innerHTML = `<div class="card" style="max-width:620px"><label class="f">One category per line<textarea id="st-cats" style="min-height:300px">${esc(st.expenseCategories.join('\n'))}</textarea></label><button class="btn pri" id="st-cs" style="margin-top:14px">${icon('check')} Save</button></div>`;
     $('#st-cs').onclick = async () => { st.expenseCategories = $('#st-cats').value.split('\n').map(s => s.trim()).filter(Boolean); await saveSettings(); toast('Saved'); };
@@ -501,16 +502,17 @@ V.settings = async (view, _, q) => {
       <p class="small">${est} ${pers ? 'Storage is marked persistent ✓' : '<button class="btn sm" id="st-pers">Ask browser to keep data permanently</button>'}${lastAnyBackup() ? `<br>Last backup: ${new Date(lastAnyBackup()).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: DEV.lastLocalAt || DEV.drive.lastAt ? 'short' : undefined })}` : ''}</p>
       <div class="row"><button class="btn pri" id="st-exp">${icon('download')} Export backup</button><button class="btn" id="st-imp">${icon('upload')} Import backup</button></div>
       <p class="tiny muted">The backup is one JSON file, including receipt photos. Keep it somewhere private because it contains your customer and financial data.</p></div>
-      <div class="card"><h2>Demo &amp; reset</h2><p class="small muted">Load fake sample data to try everything out. This replaces whatever is in the app now.</p>
-      <div class="row"><button class="btn" id="st-demo">${icon('eye')} Load demo data</button><button class="btn danger" id="st-clear">${icon('trash')} Clear all data</button></div></div>
+      ${syncOn() ? `<div class="card"><h2>Demo &amp; reset</h2><p class="small muted">Load demo data and Clear all data aren't available while cloud sync is on, so nothing gets wiped across your devices. Importing a backup merges it in (records in the backup replace the current versions; nothing is deleted).</p></div>`
+      : `<div class="card"><h2>Demo &amp; reset</h2><p class="small muted">Load fake sample data to try everything out. This replaces whatever is in the app now.</p>
+      <div class="row"><button class="btn" id="st-demo">${icon('eye')} Load demo data</button><button class="btn danger" id="st-clear">${icon('trash')} Clear all data</button></div></div>`}
       ${driveCardHTML()}${notifyCardHTML()}</div>`;
     bindDataCards(body);
     if ($('#st-pers')) $('#st-pers').onclick = async () => { const ok = await navigator.storage.persist(); toast(ok ? 'Storage is now persistent' : 'Browser declined (installing the app usually helps)'); render(); };
     $('#st-exp').onclick = async () => { await localBackup(); toast('Backup downloaded'); render(); };
     $('#st-imp').onclick = async () => { const f = await pickFile('.json,application/json'); if (!f) return; let o; try { o = JSON.parse(await readText(f)); } catch (e) { toast('Not a valid backup file'); return; }
-      if (!await confirmBox(`Replace ALL current data with the backup from ${esc((o.exportedAt || '').slice(0, 10))}?`, 'Replace')) return; try { await importBackup(o); toast('Backup restored'); go('dashboard'); } catch (e) { toast(e.message); } };
-    $('#st-demo').onclick = async () => { if (S.invoices.length + S.customers.length && !await confirmBox('Replace ALL current data with demo data?', 'Load demo')) return; await loadDemo(); toast('Demo data loaded'); go('dashboard'); };
-    $('#st-clear').onclick = async () => { if (!await confirmBox('Delete ALL data in this browser (customers, invoices, payments, expenses, receipts, settings)? Export a backup first if you need it.', 'Delete everything')) return; await clearAll(); toast('All data cleared'); go('dashboard'); };
+      if (!await confirmBox(syncOn() ? `Merge the backup from ${esc((o.exportedAt || '').slice(0, 10))} into your data? Records in the backup replace the current versions on all your devices. Nothing is deleted.` : `Replace ALL current data with the backup from ${esc((o.exportedAt || '').slice(0, 10))}?`, syncOn() ? 'Merge' : 'Replace')) return; try { await importBackup(o); toast('Backup restored'); go('dashboard'); } catch (e) { toast(e.message); } };
+    if ($('#st-demo')) $('#st-demo').onclick = async () => { if (S.invoices.length + S.customers.length && !await confirmBox('Replace ALL current data with demo data?', 'Load demo')) return; await loadDemo(); toast('Demo data loaded'); go('dashboard'); };
+    if ($('#st-clear')) $('#st-clear').onclick = async () => { if (!await confirmBox('Delete ALL data in this browser (customers, invoices, payments, expenses, receipts, settings)? Export a backup first if you need it.', 'Delete everything')) return; await clearAll(); toast('All data cleared'); go('dashboard'); };
   }
 };
 

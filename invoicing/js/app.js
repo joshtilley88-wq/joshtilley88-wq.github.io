@@ -16,7 +16,7 @@ function renderNav() {
   $('#sidebar').innerHTML = `<div class="brand"><img src="icon-192.png" alt="">Invoicing</div>
     <button class="btn pri side-new" data-act="quick-add">${icon('plus')} New</button>
     ${NAV.map(([k, l, i]) => `<a class="nav-a ${on === k ? 'on' : ''}" href="#/${k}">${icon(i)}<span>${l}</span>${k === 'outbox' && due ? `<span class="badge">${due}</span>` : ''}</a>`).join('')}
-    <div class="spacer"></div><div class="tiny muted" style="padding:10px">Your data is stored only in this browser. Export a backup regularly (Settings → Data).</div>`;
+    <div class="spacer"></div>${syncOn() ? `<a class="tiny sync-pill" href="#/settings?tab=cloud" data-state="${SY.status}" style="padding:10px;text-decoration:none">☁ ${esc(syncStatusText())}</a>` : `<div class="tiny muted" style="padding:10px">Your data is stored only in this browser. Export a backup regularly (Settings → Data).</div>`}`;
   $('#bottomnav').innerHTML = `
     <a href="#/dashboard" class="${on === 'dashboard' ? 'on' : ''}">${icon('home')}Home</a>
     <a href="#/invoices" class="${on === 'invoices' ? 'on' : ''}">${icon('file')}Invoices</a>
@@ -125,13 +125,14 @@ document.addEventListener('click', e => { const a = e.target.closest('a[href^="#
 async function boot() {
   const h = location.hash;
   if (/^#(sign|q)=/.test(h)) { await PUBLIC.render(h); return; }   // client-facing pages: never touch the owner's data
-  try { await DB.open(); await loadAll(); await loadDevice(); }
+  try { await DB.open(); await loadAll(); await loadDevice(); await loadSync(); }
   catch (e) { $('#view').innerHTML = `<div class="card"><h2>Storage unavailable</h2><p>This browser blocked local storage (private mode?). ${esc(e.message || e)}</p></div>`; return; }
   window.addEventListener('hashchange', () => { if (/^#(sign|q)=/.test(location.hash)) { location.reload(); return; } render(); });
   await render();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });
   // background jobs: Drive auto-backup + due-email notification, on open and whenever the app comes back to the front
-  const wake = () => { autoBackup().catch(() => { }); dueNotifyCheck().catch(() => { }); };
+  const wake = () => { autoBackup().catch(() => { }); dueNotifyCheck().catch(() => { }); if (syncOn()) syncNow('focus').catch(() => { }); };
+  startSync();
   wake();
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
   window.addEventListener('focus', wake);

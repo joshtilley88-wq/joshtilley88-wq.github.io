@@ -22,14 +22,30 @@ const DB = {
 const S = {};
 const DATA_COLS = COLS.filter(c => c !== 'files' && c !== 'settings');
 async function loadAll() {
-  for (const c of DATA_COLS) S[c] = await DB.all(c);
+  for (const c of DATA_COLS) S[c] = (await DB.all(c)).filter(r => !r.deleted);   // deleted = cloud-sync tombstone
   S.settings = Object.assign(defaultSettings(), await DB.get('settings', 'main') || {});
   S.settings.templates = Object.assign(defaultSettings().templates, S.settings.templates || {});
   S.settings.business = Object.assign(defaultSettings().business, S.settings.business || {});
 }
-async function save(col, o) { o.updatedAt = new Date().toISOString(); if (!o.id) o.id = uid(); await DB.put(col, o); const a = S[col]; const i = a.findIndex(x => x.id === o.id); i >= 0 ? a[i] = o : a.push(o); return o; }
-async function remove(col, id) { await DB.del(col, id); S[col] = S[col].filter(x => x.id !== id); }
-async function saveSettings() { S.settings.id = 'main'; await DB.put('settings', S.settings); }
+async function save(col, o) { o.updatedAt = new Date().toISOString(); if (!o.id) o.id = uid(); await DB.put(col, o); const a = S[col]; const i = a.findIndex(x => x.id === o.id); i >= 0 ? a[i] = o : a.push(o); await syncMark(col, o.id); return o; }
+async function remove(col, id) {
+  if (syncOn()) {   // cloud sync: keep a tombstone so the delete reaches other devices
+    const r = await DB.get(col, id); if (r) { await DB.put(col, Object.assign(r, { deleted: true, updatedAt: new Date().toISOString() })); await syncMark(col, id); }
+  } else await DB.del(col, id);
+  S[col] = S[col].filter(x => x.id !== id);
+}
+async function saveSettings() { S.settings.id = 'main'; S.settings.updatedAt = new Date().toISOString(); await DB.put('settings', S.settings); await syncMark('settings', 'main'); }
+/* receipt files: blob kept locally; in cloud mode also uploaded to Storage and fetched on first view on other devices */
+async function filePut(rec) { rec.updatedAt = new Date().toISOString(); rec.size = rec.blob ? rec.blob.size : 0; await DB.put('files', rec); await syncMark('files', rec.id, true); }
+async function fileDel(id) {
+  if (syncOn()) { const r = await DB.get('files', id); if (r) { delete r.blob; await DB.put('files', Object.assign(r, { deleted: true, updatedAt: new Date().toISOString() })); await syncMark('files', id, true); } }
+  else await DB.del('files', id);
+}
+async function fileGet(id) {
+  const r = await DB.get('files', id); if (!r || r.deleted) return null; if (r.blob) return r;
+  if (syncOn()) { try { return await cloudFetchBlob(r); } catch (e) { console.warn('receipt download failed', e); } }
+  return null;
+}
 const byId = (col, id) => S[col].find(x => x.id === id);
 
 function defaultSettings() {
@@ -159,18 +175,29 @@ const outboxDue = () => outboxActive().filter(e => (e.scheduledDate || '') <= to
 async function exportBackup() {
   const out = { app: 'invoicing', version: 1, exportedAt: new Date().toISOString(), settings: S.settings };
   for (const c of DATA_COLS) out[c] = S[c];
-  const files = await DB.all('files'); out.files = [];
-  for (const f of files) out.files.push({ id: f.id, name: f.name, type: f.type, dataURL: await readDataURL(f.blob) });
+  const files = (await DB.all('files')).filter(f => !f.deleted); out.files = [];
+  for (const f of files) { const g = f.blob ? f : await fileGet(f.id); if (g && g.blob) out.files.push({ id: f.id, name: f.name, type: f.type, dataURL: await readDataURL(g.blob) }); else out.missingFiles = (out.missingFiles || 0) + 1; }
   return out;
 }
 async function importBackup(o, replace = true) {
   if (!o || o.app !== 'invoicing') throw new Error('This is not an Invoicing backup file.');
-  const dev = await DB.get('settings', 'device');   // this device's Drive/notification state is not part of a backup
+  if (syncOn()) {   // cloud sync on: merge the backup in as fresh edits (they win, sync to other devices); nothing is deleted
+    const now = new Date().toISOString();
+    if (o.settings) { const keep = { _rev: S.settings._rev }; S.settings = Object.assign(defaultSettings(), o.settings, keep, { id: 'main' }); await saveSettings(); }
+    for (const c of DATA_COLS) for (const r of o[c] || []) { const cur = await DB.get(c, r.id); delete r.deleted; r._rev = cur ? cur._rev : undefined; await save(c, r); }
+    for (const f of o.files || []) { const cur = await DB.get('files', f.id); await filePut({ id: f.id, name: f.name, type: f.type, blob: dataURLtoBlob(f.dataURL), _rev: cur ? cur._rev : undefined }); }
+    await loadAll(); return;
+  }
+  const dev = await DB.get('settings', 'device'), syn = await DB.get('settings', 'sync');   // per-device rows are not part of a backup
   if (replace) for (const c of COLS) await DB.clear(c);
-  if (dev) await DB.put('settings', dev);
+  if (dev) await DB.put('settings', dev); if (syn) await DB.put('settings', syn);
   if (o.settings) { await DB.put('settings', Object.assign(o.settings, { id: 'main' })); }
   for (const c of DATA_COLS) for (const r of o[c] || []) await DB.put(c, r);
   for (const f of o.files || []) await DB.put('files', { id: f.id, name: f.name, type: f.type, blob: dataURLtoBlob(f.dataURL) });
   await loadAll();
 }
-async function clearAll() { const dev = await DB.get('settings', 'device'); for (const c of COLS) await DB.clear(c); if (dev) await DB.put('settings', dev); await loadAll(); }
+async function clearAll() {
+  if (syncOn()) throw new Error('Not available while cloud sync is on.');
+  const dev = await DB.get('settings', 'device'), syn = await DB.get('settings', 'sync'); for (const c of COLS) await DB.clear(c);
+  if (dev) await DB.put('settings', dev); if (syn) await DB.put('settings', syn); await loadAll();
+}

@@ -3,3 +3,7 @@
  * (looks like 1234567890-abc...apps.googleusercontent.com). Leave '' to hide Google Drive backup. */
 'use strict';
 const GOOGLE_CLIENT_ID = '295146519087-4r1usln4vtc5asq56gttk0jcevlqg2fc.apps.googleusercontent.com';
+/* Cloud sync (Supabase, Sydney). Both values are public by design: data is protected by row-level security.
+ * Never put the service_role / secret key or the database password here. Leave '' to hide cloud sync. */
+const SUPABASE_URL = 'https://opekqrldytqvjziowbqo.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_Kx9Q3ammN998eEFj6uJ8Sw_QZ8bl99w';

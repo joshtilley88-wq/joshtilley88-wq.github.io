@@ -146,7 +146,10 @@ You change the quote ONLY through the tools. Rules:
     const usage = { prompt: 0, completion: 0, model: '' };
     let explained = [];
     for (let round = 0; round < 4; round++) {
-      const json = await call({ model: s.model, messages, tools: TOOLS, tool_choice: 'auto', max_completion_tokens: 3000 }, s);
+      const req = { model: s.model, messages, tools: TOOLS, tool_choice: 'auto', max_completion_tokens: 3000 };
+      // GPT-5.x models only allow function tools on chat/completions with reasoning off.
+      if (/^gpt-5/i.test(s.model || '')) req.reasoning_effort = 'none';
+      const json = await call(req, s);
       const u = usageOf(json); usage.prompt += u.prompt; usage.completion += u.completion; usage.model = u.model;
       const msg = json.choices[0].message || {};
       const calls = (msg.tool_calls || []).filter(c => c.type === 'function');

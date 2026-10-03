@@ -41,14 +41,33 @@ const sbErr = (e, what) => { const m = (e && (e.message || e.msg || e.error_desc
 
 /* ---------- sign in (email 6-digit code) ---------- */
 async function cloudSendCode(email) {
-  const sb = await sbc(); const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-  if (error) { if (error.status === 429 || /rate|security purposes|too many/i.test(error.message)) throw new Error('Too many sign-in emails were sent recently. The free email sender only allows a few per hour, so please wait a while and try again.'); throw sbErr(error, 'Couldn\'t send the code'); }
+  const sb = await sbc(); const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
+  if (error) { if (error.status === 429 || /rate|security purposes|too many/i.test(error.message)) throw new Error('Too many sign-in emails were sent recently. The free email sender only allows a few per hour, so please wait a while and try again.'); if (/not authori[sz]ed/i.test(error.message)) throw new Error('This email address can\'t get sign-in emails yet. The free email sender only sends to people added to the Supabase team (or set up a custom email sender). Ask Josh.'); throw sbErr(error, 'Couldn\'t send the code'); }
+}
+/* The email holds either a 6-digit code (custom email template) or, with Supabase's free default email, only a sign-in link.
+ * Accept both: a typed code, or the link pasted in (its token is verified here, so it works inside the home-screen app too). */
+function parseSignInLink(t) {
+  try { const u = new URL(String(t).trim()); const th = u.searchParams.get('token') || u.searchParams.get('token_hash'); if (!th) return null; let type = u.searchParams.get('type') || 'magiclink'; if (!['magiclink', 'signup', 'email', 'invite'].includes(type)) type = 'magiclink'; return { token_hash: th, type }; } catch (e) { return null; }
 }
 async function cloudVerifyCode(email, code) {
-  const sb = await sbc(); const { data, error } = await sb.auth.verifyOtp({ email, token: String(code).trim(), type: 'email' });
-  if (error) throw new Error(/expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Check the latest email, or send a new code.' : sbErr(error).message);
-  if (syncOn() && SY.st.userId && SY.st.userId !== data.user.id) { await sb.auth.signOut({ scope: 'local' }); throw new Error(`This device syncs with ${SY.st.email}. Please sign in with that email.`); }
-  SY.st.email = data.user.email; SY.st.userId = data.user.id; await saveSync(); if (syncOn()) syncSoon(200); return data.user;
+  const sb = await sbc(), raw = String(code || '').trim(), link = parseSignInLink(raw);
+  if (!link && !/^\d{6,10}$/.test(raw.replace(/\s/g, ''))) throw new Error('Type the code from the email, or paste the whole sign-in link.');
+  const { data, error } = link ? await sb.auth.verifyOtp(link) : await sb.auth.verifyOtp({ email, token: raw.replace(/\s/g, ''), type: 'email' });
+  if (error) throw new Error(/expired|invalid/i.test(error.message) ? (link ? 'That sign-in link has expired or was already used. Send a new one.' : 'That code is wrong or has expired. Check the latest email, or send a new code.') : sbErr(error).message);
+  return finishSignIn(sb, data.user);
+}
+async function finishSignIn(sb, user) {
+  if (syncOn() && SY.st.userId && SY.st.userId !== user.id) { await sb.auth.signOut({ scope: 'local' }); throw new Error(`This device syncs with ${SY.st.email}. Please sign in with that email.`); }
+  SY.st.email = user.email; SY.st.userId = user.id; await saveSync(); if (syncOn()) syncSoon(200); return user;
+}
+/* Tapping the sign-in link in the email opens the app with #access_token=... (or #error=...). */
+const isAuthHash = h => /(^#|&)(access_token|error_description)=/.test(h || '');
+async function cloudAuthFromHash(h) {
+  const p = new URLSearchParams(String(h).replace(/^#/, ''));
+  if (p.get('error_description')) throw new Error(/expired|invalid/i.test(p.get('error_description')) ? 'That sign-in link has expired or was already used. Send a new one.' : p.get('error_description'));
+  const sb = await sbc(); const { data, error } = await sb.auth.setSession({ access_token: p.get('access_token'), refresh_token: p.get('refresh_token') });
+  if (error) throw sbErr(error, 'Couldn\'t sign in');
+  return finishSignIn(sb, data.user);
 }
 async function cloudSignOut() {
   try { const sb = await sbc(); await sb.auth.signOut({ scope: 'local' }); } catch (e) { }
@@ -327,9 +346,9 @@ async function moveToCloud(opts = {}, progress = () => { }) {
 /* ---------- Settings → Cloud sync tab ---------- */
 const signInFormHTML = () => `<label class="f">Email<input type="email" id="cl-email" autocomplete="email" placeholder="you@example.com" value="${esc(SY.st.email || '')}"></label>
       <div class="row" style="margin-top:10px"><button class="btn pri" id="cl-send">${icon('mail')} Email me a sign-in code</button></div>
-      <div id="cl-code-wrap" hidden style="margin-top:14px"><label class="f">6-digit code from the email<input type="text" id="cl-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456"></label>
+      <div id="cl-code-wrap" hidden style="margin-top:14px"><label class="f">Code from the email, or paste the sign-in link<input type="text" id="cl-code" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" placeholder="123456 or https://…"></label>
       <div class="row" style="margin-top:10px"><button class="btn pri" id="cl-verify">${icon('check')} Sign in</button></div></div>
-      <p class="tiny muted" style="margin-top:12px">The code email can take a minute; check spam. Only a few codes can be sent per hour for now.</p>`;
+      <p class="tiny muted" style="margin-top:12px">The email can take a minute; check spam. If it has a <b>sign-in link</b> instead of a code, tap the link on this device, or (for the home-screen app) press and hold it, copy it and paste it above. Only a couple of emails can be sent per hour for now.</p>`;
 async function cloudTab(body) {
   if (!cloudEnabled()) { body.innerHTML = '<div class="card"><p class="muted">Cloud sync isn\'t set up yet.</p></div>'; return; }
   let sess = null; try { sess = await cloudSession(); } catch (e) { }
@@ -360,7 +379,7 @@ function bindCloudTab(body) {
   const q = s => $(s, body);
   if (q('#cl-send')) q('#cl-send').onclick = async e => {
     const email = q('#cl-email').value.trim(); if (!/^\S+@\S+\.\S+$/.test(email)) { toast('Enter your email address'); return; }
-    const b = e.currentTarget; b.disabled = true; try { await cloudSendCode(email); SY.st.email = email; await saveSync(); q('#cl-code-wrap').hidden = false; q('#cl-code').focus(); toast('Code sent. Check your email'); } catch (err) { toast(err.message); } finally { b.disabled = false; }
+    const b = e.currentTarget; b.disabled = true; try { await cloudSendCode(email); SY.st.email = email; await saveSync(); q('#cl-code-wrap').hidden = false; q('#cl-code').focus(); toast('Email sent. Check your inbox'); } catch (err) { toast(err.message); } finally { b.disabled = false; }
   };
   if (q('#cl-verify')) q('#cl-verify').onclick = async e => {
     const b = e.currentTarget; b.disabled = true; try { await cloudVerifyCode(q('#cl-email').value.trim(), q('#cl-code').value); toast('Signed in'); render(); } catch (err) { toast(err.message); b.disabled = false; }

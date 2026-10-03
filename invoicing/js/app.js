@@ -127,6 +127,10 @@ async function boot() {
   if (/^#(sign|q)=/.test(h)) { await PUBLIC.render(h); return; }   // client-facing pages: never touch the owner's data
   try { await DB.open(); await loadAll(); await loadDevice(); await loadSync(); }
   catch (e) { $('#view').innerHTML = `<div class="card"><h2>Storage unavailable</h2><p>This browser blocked local storage (private mode?). ${esc(e.message || e)}</p></div>`; return; }
+  if (isAuthHash(h) && cloudEnabled()) {   // came back from the sign-in link in the email
+    history.replaceState(null, '', location.pathname + location.search + '#/settings?tab=cloud');
+    try { await cloudAuthFromHash(h); setTimeout(() => toast('Signed in'), 300); } catch (e) { setTimeout(() => toast(e.message), 300); }
+  }
   window.addEventListener('hashchange', () => { if (/^#(sign|q)=/.test(location.hash)) { location.reload(); return; } render(); });
   await render();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });

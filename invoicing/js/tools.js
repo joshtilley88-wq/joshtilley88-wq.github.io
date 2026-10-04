@@ -509,8 +509,8 @@ V.settings = async (view, _, q) => {
       ${syncOn() ? `<div class="card"><h2>Demo &amp; reset</h2><p class="small muted">Load demo data and Clear all data aren't available while cloud sync is on, so nothing gets wiped across your devices. Importing a backup merges it in (records in the backup replace the current versions; nothing is deleted).</p></div>`
       : `<div class="card"><h2>Demo &amp; reset</h2><p class="small muted">Load fake sample data to try everything out. This replaces whatever is in the app now.</p>
       <div class="row"><button class="btn" id="st-demo">${icon('eye')} Load demo data</button><button class="btn danger" id="st-clear">${icon('trash')} Clear all data</button></div></div>`}
-      ${driveCardHTML()}${notifyCardHTML()}</div>`;
-    bindDataCards(body);
+      ${driveCardHTML()}${outlookCardHTML()}${notifyCardHTML()}</div>`;
+    bindDataCards(body); bindOutlookCard(body);
     if ($('#st-pers')) $('#st-pers').onclick = async () => { const ok = await navigator.storage.persist(); toast(ok ? 'Storage is now persistent' : 'Browser declined (installing the app usually helps)'); render(); };
     $('#st-exp').onclick = async () => { await localBackup(); toast('Backup downloaded'); render(); };
     $('#st-imp').onclick = async () => { const f = await pickFile('.json,application/json'); if (!f) return; let o; try { o = JSON.parse(await readText(f)); } catch (e) { toast('Not a valid backup file'); return; }

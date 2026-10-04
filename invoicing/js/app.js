@@ -66,18 +66,25 @@ function openCompose(entry, opts = {}) {
   const m0 = composeEmail(entry);
   const inv = entry.invoiceId && byId('invoices', entry.invoiceId);
   // PDF attachment: invoices are always sent as a PDF; deposit/balance/receipt emails can add one
-  const pdf = typeof pdfForEmail === 'function' ? pdfForEmail(entry) : null, pdfOnly = !!pdf && entry.type === 'invoice', share = pdf && canShareFiles();
+  const pdf = typeof pdfForEmail === 'function' ? pdfForEmail(entry) : null, pdfOnly = !!pdf && entry.type === 'invoice';
+  let share = pdf && canShareFiles();
+  // with Outlook connected, the PDF button makes a ready-to-send Outlook draft (To + message + PDF) instead
+  let ol = !!pdf && typeof outlookOn === 'function' && outlookOn(); const olOffer = !!pdf && !ol && typeof outlookEnabled === 'function' && outlookEnabled();
   let pdfBlob = null, pdfErr = null; const pdfP = pdf ? pdf.make().then(b => { pdfBlob = b; }, e => { pdfErr = e; console.warn('PDF failed', e); }) : null;
-  const pdfBtn = pdf ? `<button class="btn ${pdfOnly ? 'out' : ''}" id="em-pdf">${icon(share ? 'send' : 'download')} ${share ? (pdfOnly ? 'Share PDF' : 'Send with PDF') : (pdfOnly ? 'Download PDF &amp; open email' : 'Email with PDF')}</button>` : '';
-  const pdfNote = !pdf ? '' : share ? `Tap <b>${pdfOnly ? 'Share PDF' : 'Send with PDF'}</b> and choose Gmail (or your email app): it opens with <b>${esc(pdf.name)}</b> attached and the message filled in. Add the To address if it's empty (it's copied for you). Then come back and tap <b>Mark as sent</b>.`
+  const shareLbl = () => share ? (pdfOnly ? 'Share PDF' : 'Send with PDF') : (pdfOnly ? 'Download PDF &amp; open email' : 'Email with PDF');
+  const pdfLbl = () => `${icon(ol || share ? 'send' : 'download')} ${ol ? 'Open in Outlook with PDF' : shareLbl()}`;
+  const pdfBtn = pdf ? `<button class="btn ${pdfOnly ? 'out' : ''}" id="em-pdf">${pdfLbl()}</button>` : '';
+  const pdfNote = !pdf ? '' : ol ? `Tap <b>Open in Outlook with PDF</b>: a draft with the To address, this message and <b>${esc(pdf.name)}</b> attached opens in your Outlook (${esc(DEV.outlook.username || 'connected')}). Check it and press Send, then come back and tap <b>Mark as sent</b>.`
+    : share ? `Tap <b>${pdfOnly ? 'Share PDF' : 'Send with PDF'}</b> and choose Gmail (or your email app): it opens with <b>${esc(pdf.name)}</b> attached and the message filled in. Add the To address if it's empty (it's copied for you). Then come back and tap <b>Mark as sent</b>.`
     : `<b>${pdfOnly ? 'Download PDF &amp; open email' : 'Email with PDF'}</b> saves <b>${esc(pdf.name)}</b> to your downloads and opens your email app with the message filled in. Attach the PDF, send it, then come back and tap <b>Mark as sent</b>.`;
+  const olTip = olOffer ? ' <span class="tiny">Tip: connect Outlook in Settings → Data to get a ready-made draft with the PDF attached.</span>' : '';
   const m = openModal({
     title: esc(EMAIL_LABEL[entry.type] || 'Email') + (inv ? ' · ' + esc(inv.number) : ''), wide: true,
     body: `<div class="stack">
       <label class="f">To<input type="email" id="em-to" value="${esc(m0.to)}" placeholder="client@example.com"></label>
       <label class="f">Subject<input type="text" id="em-sub" value="${esc(m0.subject)}"></label>
       <label class="f">Message<textarea id="em-body" style="min-height:260px">${esc(m0.body)}</textarea></label>
-      <div class="note" id="em-note">${pdfOnly ? pdfNote : `Opens your email app with everything filled in.${pdf ? ' ' + pdfNote : ' Then come back and tap <b>Mark as sent</b>.'}`}</div>
+      <div class="note" id="em-note">${pdfOnly ? pdfNote + olTip : `Opens your email app with everything filled in.${pdf ? ' ' + pdfNote + olTip : ' Then come back and tap <b>Mark as sent</b>.'}`}</div>
     </div>`,
     foot: `${entry.id ? `<button class="btn ghost" id="em-skip">Skip / dismiss</button>` : ''}<div class="spacer"></div>
       <button class="btn" id="em-copy">${icon('copy')} Copy email</button>
@@ -90,25 +97,52 @@ function openCompose(entry, opts = {}) {
     $('#em-note', m).classList.toggle('pink', u.length > 1900); if (u.length > 1900) $('#em-note', m).innerHTML = 'This email is long. Some desktop email apps cut off very long mailto links, so if the text looks cut off, use <b>Copy email</b> and paste it instead. Gmail usually handles it fine.'; };
   m.addEventListener('input', upd); upd();
   $('#em-copy', m).onclick = async () => { const v = val(); toast(await copyText(`To: ${v.to}\nSubject: ${v.subject}\n\n${v.body}`) ? 'Email copied' : 'Copy failed'); };
+  let draft = null;
+  const openDraft = () => { const w = window.open(draft.webLink, '_blank'); if (w) { try { w.opener = null; } catch (x) { } } return !!w; };
   if (pdf) $('#em-pdf', m).onclick = async e => {
     const btn = e.currentTarget, v = val();
+    const done = msg => { const n = $('#em-note', m); n.classList.add('pink'); n.innerHTML = msg; };
+    if (draft) { if (!openDraft()) toast('Your browser blocked the new tab. Allow pop-ups for this app'); return; }
     if (!pdfBlob && !pdfErr) {   // still being made: wait, then (for sharing) ask for one more tap so the browser allows the share sheet
       const lbl = btn.innerHTML; btn.disabled = true; btn.textContent = 'Making PDF…'; await pdfP; btn.disabled = false; btn.innerHTML = lbl;
-      if (pdfBlob && share) { toast('PDF ready. Tap again to share'); return; }
+      if (pdfBlob && share && !(ol && navigator.onLine)) { toast('PDF ready. Tap again to share'); return; }
     }
     if (!pdfBlob) { toast('Couldn\'t make the PDF: ' + (pdfErr && pdfErr.message || 'unknown error')); return; }
-    const done = msg => { const n = $('#em-note', m); n.classList.add('pink'); n.innerHTML = msg; };
+    let why = olOffer ? 'Outlook isn\'t connected' : '';
+    if (ol) {
+      why = !navigator.onLine ? 'You\'re offline' : OL.needReconnect ? 'Outlook needs reconnecting (Settings → Data)' : '';
+      if (!why) {
+        const lbl = btn.innerHTML; btn.disabled = true; btn.textContent = 'Creating Outlook draft…'; let err = null;
+        try { draft = await outlookDraft({ to: v.to, subject: v.subject, body: v.body, name: pdf.name, blob: pdfBlob }); } catch (x) { err = x; console.warn('Outlook draft', x); }
+        btn.disabled = false; btn.innerHTML = lbl;
+        if (draft) {
+          const opened = openDraft();
+          btn.innerHTML = `${icon('send')} Open draft in Outlook`;
+          toast('Draft ready in Outlook with the PDF attached');
+          done(`Draft ready in Outlook${v.to ? ` to <b>${esc(v.to)}</b>` : ''} with <b>${esc(pdf.name)}</b> attached.${opened ? '' : ' Tap <b>Open draft in Outlook</b> to open it.'} Check it and press Send, then tap <b>Mark as sent</b>.`);
+          return;
+        }
+        why = err && err.kind === 'auth' ? 'Outlook needs reconnecting (Settings → Data)' : 'Outlook didn\'t work: ' + (err && err.message || 'unknown error');
+        ol = false; btn.innerHTML = pdfLbl();
+        if (share) {   // the share sheet needs a fresh tap after waiting on the network
+          toast(`${why}. Tap ${shareLbl()} to share the PDF instead`);
+          done(`${esc(why)}. Tap <b>${shareLbl()}</b> to share the PDF another way, then tap <b>Mark as sent</b>.`);
+          return;
+        }
+      }
+    }
     if (share) {
       const file = new File([pdfBlob], pdf.name, { type: 'application/pdf' });
       if (v.to && navigator.clipboard) navigator.clipboard.writeText(v.to).catch(() => { });
+      if (why && ol) toast(why + ', so sharing the PDF instead');
       try { await navigator.share({ files: [file], title: v.subject, text: v.body }); done(`Sent it? Tap <b>Mark as sent</b>.${v.to ? ` (The address ${esc(v.to)} was copied in case Gmail left To empty.)` : ''}`); }
       catch (err) { if (err && err.name === 'AbortError') return; download(pdf.name, pdfBlob); toast('Sharing didn\'t work here, so the PDF was downloaded instead'); }
       return;
     }
     download(pdf.name, pdfBlob);
     setTimeout(() => { const a = document.createElement('a'); a.href = mailtoURL(v.to, v.subject, v.body); a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }, 400);
-    toast('PDF downloaded. Attach it to the email that opens');
-    done(`<b>${esc(pdf.name)}</b> is in your downloads. Attach it to the email, send it, then tap <b>Mark as sent</b>.`);
+    toast(why ? `${why}, so the PDF was downloaded. Attach it to the email that opens` : 'PDF downloaded. Attach it to the email that opens');
+    done(`${why ? esc(why) + '. ' : ''}<b>${esc(pdf.name)}</b> is in your downloads. Attach it to the email, send it, then tap <b>Mark as sent</b>.`);
   };
   const persist = async status => {
     const v = val(); const e = entry;
@@ -157,6 +191,7 @@ async function boot() {
     history.replaceState(null, '', location.pathname + location.search + '#/settings?tab=cloud');
     try { await cloudAuthFromHash(h); setTimeout(() => toast('Signed in'), 300); } catch (e) { setTimeout(() => toast(e.message), 300); }
   }
+  if (typeof outlookAfterRedirect === 'function') { const msg = await outlookAfterRedirect(); if (msg) setTimeout(() => toast(msg), 300); }   // back from Microsoft sign-in
   window.addEventListener('hashchange', () => { if (/^#(sign|q)=/.test(location.hash)) { location.reload(); return; } render(); });
   await render();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });

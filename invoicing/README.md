@@ -6,18 +6,21 @@ Live at https://joshtilley88-wq.github.io/invoicing/
 * Plain HTML/CSS/vanilla JS. Chart.js 4.4.1, jsPDF 4.2.1 (MIT, loaded only when a PDF is made) and the Inter font are vendored (no CDN calls).
 * **By default all user data stays in the browser** (IndexedDB database `invoicing`). Cloud sync (below) is opt-in. Nothing in this repo contains real customer or financial data.
   Settings → Data has Load demo data (fake), Export backup / Import backup (JSON, includes receipt files) and Clear all data.
-* No AI, no backend, no tracking. CSP allows `'self'` plus, only for the optional Google Drive backup, `accounts.google.com/gsi/*` (sign-in) and `www.googleapis.com` (Drive API). Nothing is loaded from Google until you tap **Connect Google Drive** / a backup runs.
+* No AI, no backend, no tracking. CSP allows `'self'` plus, only for the optional Google Drive backup, `accounts.google.com/gsi/*` (sign-in) and `www.googleapis.com` (Drive API), and for optional Outlook drafts `login.microsoftonline.com` / `login.live.com` (sign-in), `graph.microsoft.com` and `outlook.office.com` / `outlook.office365.com` / `outlook.live.com` (large-attachment uploads). Nothing is loaded from Google until you tap **Connect Google Drive** / a backup runs.
 
 ## Files
 | File | What |
 |---|---|
 | `index.html` | Shell + CSP |
 | `app.css` | Styles (white base, pink `#E85D9A` / lavender `#9B7BD4`, gradients) |
-| `js/config.js` | `GOOGLE_CLIENT_ID` (public OAuth Web client ID). Empty = Drive backup hidden ("Drive backup not set up yet") |
+| `js/config.js` | `GOOGLE_CLIENT_ID` (public OAuth Web client ID). Empty = Drive backup hidden ("Drive backup not set up yet"). `OUTLOOK_CLIENT_ID` (Azure app client ID). Empty = Outlook hidden ("Outlook not set up yet") |
 | `js/sync.js` | Opt-in cloud sync (Supabase): email-code sign-in, Move my data to the cloud, offline queue, push/pull, receipts in Storage, Settings → Cloud sync tab |
 | `js/vendor/supabase.js` | supabase-js 2.117.2 (UMD), loaded only when cloud sync is used |
 | `supabase/migrations/` | Database schema, RLS, RPCs, Storage bucket (apply with `supabase db push` / `db query --linked`) |
 | `js/pdf.js` | Email PDF: draws the formal invoice / receipt as an A4 PDF with real (selectable) text using `js/vendor/jspdf.umd.min.js` |
+| `js/outlook.js` | Outlook drafts: Connect Outlook (MSAL.js redirect sign-in, personal Microsoft accounts) and Email PDF → Graph draft with To, message and PDF attached |
+| `js/vendor/msal-browser.min.js` | @azure/msal-browser 5.24.0 (MIT, UMD), loaded only when Outlook is used |
+| `auth.html`, `js/auth-bridge.js`, `js/vendor/msal-redirect-bridge.min.js` | Microsoft sign-in return page (MSAL v5 redirect bridge). This is the registered redirect URI |
 | `js/backup.js` | Google Drive backup (GIS token model, `drive.file`), backup reminder banners, "emails due" notifications |
 | `js/util.js` | Helpers: money/dates (AU FY), CSV, link encoding (deflate + base64url), signatures, icons |
 | `js/db.js` | IndexedDB storage, invoice maths, statuses, email templates/outbox logic, backup |
@@ -64,6 +67,13 @@ Live at https://joshtilley88-wq.github.io/invoicing/
 * Phones (Web Share with files): **Share PDF** opens the share sheet with the PDF attached and the invoice email subject/message as title/text; choose Gmail. The To address is copied to the clipboard in case the app leaves it empty. Desktop (no file sharing): **Download PDF & open email** saves the PDF and opens the mailto email with To/subject/message; attach the PDF yourself.
 * **Mark as sent** works as before (outbox entry sent, invoice marked sent). Deposit, balance and receipt emails keep their text-only buttons and also get **Send with PDF** / **Email with PDF** (receipt PDFs match the printable receipt).
 * Works offline: the library is in the service worker cache. Built-in PDF fonts cover Western European characters; emoji and other scripts are left out of the PDF.
+
+## Outlook drafts (optional)
+* Settings → Data → **Connect Outlook** signs in to a personal Outlook / Hotmail account (authority `login.microsoftonline.com/consumers`, delegated `Mail.ReadWrite`; MSAL adds `openid profile offline_access`). Full-page redirect sign-in (works in installed Android / iPhone apps); Microsoft returns to `auth.html`, which hands the result back to the app. Tokens stay in MSAL's localStorage cache on this device; the device row (`settings`/`device`) only stores `outlook.username` / `homeAccountId`. **Disconnect** removes both.
+* Connected + online: **Email PDF** (and the "with PDF" button on deposit / balance / receipt emails) becomes **Open in Outlook with PDF**: it creates a draft with `POST /me/messages` (To = the address in the To box, which comes from the customer record; subject + text body as shown; PDF as a `fileAttachment`; over 3 MB it uses an attachment upload session), then opens the draft's `webLink` so she can check it and press Send. **Mark as sent** stays manual (the app can't see whether it was sent).
+* Fallbacks (toast says why): not connected, offline, Microsoft sign-in expired ("Outlook needs reconnecting"), or Graph error → the normal Share PDF / Download PDF & open email flow. PDFs are still made offline.
+* Azure app registration: Personal Microsoft accounts only; platform **Single-page application**; redirect URI `https://joshtilley88-wq.github.io/invoicing/auth.html`; Microsoft Graph delegated `Mail.ReadWrite` (+ default `User.Read`); no client secret.
+* SPA refresh tokens last 24 hours. After that MSAL tries a hidden renewal, which browsers that block third-party cookies (Safari, iPhone apps) usually refuse, so expect **Reconnect Outlook** (one quick redirect) after a day or so without use.
 
 ## Email-due notifications
 * When the app opens, if any queued emails are due today or overdue, it shows one system notification via the service worker ("2 invoice emails due today"), at most once a day. Tapping it opens the email outbox.

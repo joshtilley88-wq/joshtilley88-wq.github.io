@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signing in…</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+</head>
+<body style="font:16px system-ui,sans-serif;color:#444;text-align:center;padding:40px 20px">
+<!-- Microsoft sign-in comes back here (MSAL redirect bridge), then returns to the app. Keep this page tiny. -->
+<p id="m">Finishing Microsoft sign-in…</p>
+<script src="js/vendor/msal-redirect-bridge.min.js"></script>
+<script src="js/auth-bridge.js"></script>
+</body>
+</html>

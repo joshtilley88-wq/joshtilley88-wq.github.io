@@ -12,11 +12,11 @@ const DAY = 86400000;
 /* ---------- device state (settings store, id 'device'; not part of the exported backup) ---------- */
 let DEV = null;
 function defaultDevice() {
-  return { id: 'device', drive: { connected: false, email: '', folderId: '', lastAt: '', lastName: '', lastError: '', freqDays: 3, keep: 10 }, lastLocalAt: '', notify: { lastShown: '', prompted: false }, snooze: '' };
+  return { id: 'device', drive: { connected: false, email: '', folderId: '', lastAt: '', lastName: '', lastError: '', freqDays: 3, keep: 10 }, lastLocalAt: '', notify: { lastShown: '', prompted: false }, snooze: '', outlook: { username: '', homeAccountId: '', lastError: '' } };
 }
 async function loadDevice() {
   const d = defaultDevice(), s = (await DB.get('settings', 'device')) || {};
-  DEV = Object.assign(d, s); DEV.drive = Object.assign(d.drive, s.drive || {}); DEV.notify = Object.assign(d.notify, s.notify || {});
+  DEV = Object.assign(d, s); DEV.drive = Object.assign(d.drive, s.drive || {}); DEV.notify = Object.assign(d.notify, s.notify || {}); DEV.outlook = Object.assign(d.outlook, s.outlook || {});
   return DEV;
 }
 async function saveDevice() { DEV.id = 'device'; await DB.put('settings', DEV); }

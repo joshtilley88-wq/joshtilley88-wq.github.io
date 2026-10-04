@@ -4,6 +4,71 @@ const V = {};
 const pill = s => `<span class="pill ${s}">${esc(s.replace('-', ' '))}</span>`;
 const pageH = (title, sub = '', actions = '', back = '') => `<div class="page-h">${back ? `<a class="btn ghost icon" href="#/${back}" aria-label="Back">${icon('back')}</a>` : ''}<div><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div><div class="spacer"></div>${actions}</div>`;
 const custOptions = (sel, blank = 'Select customer…') => `<option value="">${blank}</option>` + [...S.customers].sort((a, b) => custName(a).localeCompare(custName(b))).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(custName(c))}</option>`).join('');
+/* ---------- customer picker: type to filter by name, business, email or phone; add a new customer inline ----------
+ * custPicker(id, selectedId) renders a hidden <input id=id> holding the customer id (fires 'change' like a select). */
+const custPicker = (id, sel, ph = 'Search name, email or phone…') => { const c = byId('customers', sel);
+  return `<div class="cpick" data-for="${id}"><input type="hidden" id="${id}" value="${esc(c ? c.id : '')}"><div class="cpick-box">${icon('search')}<input type="text" class="cpick-q" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="${esc(ph)}" value="${esc(c ? custName(c) : '')}" aria-label="Customer"></div><div class="cpick-list" hidden></div></div>`; };
+const CPK = { max: 60 };
+const digits = v => String(v || '').replace(/\D/g, '');
+function cpIndex() {
+  if (CPK.src === S.customers && CPK.n === S.customers.length) return CPK.idx;   // rebuilt each time the list opens
+  CPK.idx = [...S.customers].sort((a, b) => custName(a).localeCompare(custName(b))).map(c => ({ c, label: custName(c), n: (custName(c) + ' ' + (c.name || '')).toLowerCase(), hay: [c.name, c.business, c.email, c.phone].join(' ').toLowerCase(), ph: digits(c.phone) }));
+  CPK.src = S.customers; CPK.n = S.customers.length; return CPK.idx;
+}
+function cpFilter(q) {
+  const toks = q.toLowerCase().split(/\s+/).filter(Boolean); const all = cpIndex(); if (!toks.length) return all;
+  if (/^[\d\s()+-]+$/.test(q) && digits(q).length >= 3) {   // looks like a phone number: compare digits only (+61 4.. = 04..)
+    let d = digits(q); const alt = d.startsWith('61') && d.length > 3 ? '0' + d.slice(2) : null;
+    return all.filter(x => x.ph.includes(d) || (alt && x.ph.includes(alt)) || x.hay.includes(q.trim().toLowerCase()));
+  }
+  const out = [];
+  for (const x of all) { let okk = true; for (const t of toks) { const d = digits(t); if (!(x.hay.includes(t) || (d.length >= 3 && d.length === t.replace(/[\s()+-]/g, '').length && x.ph.includes(d)))) { okk = false; break; } } if (okk) out.push(x); }
+  const t0 = toks[0]; return out.sort((a, b) => (b.n.startsWith(t0) - a.n.startsWith(t0)));
+}
+function cpOpen(el) {
+  const q = $('.cpick-q', el), list = $('.cpick-list', el), cur = $('input[type=hidden]', el).value;
+  const typed = q.value.trim(), selName = custName(byId('customers', cur)); const term = cur && typed === selName ? '' : typed;
+  const res = cpFilter(term), shown = res.slice(0, CPK.max);
+  list.innerHTML = `<div class="cp-row cp-add" data-new="1">${icon('plus')}<div class="grow"><b>Add new customer</b>${term ? ` <span class="muted">“${esc(term)}”</span>` : ''}</div></div>` +
+    (shown.map(x => `<div class="cp-row${x.c.id === cur ? ' sel' : ''}" data-cid="${x.c.id}"><div class="grow"><div class="cp-n">${esc(x.label)}</div>${x.c.email || x.c.phone ? `<div class="cp-s">${esc([x.c.email, x.c.phone].filter(Boolean).join(' · '))}</div>` : ''}</div></div>`).join('') ||
+      `<div class="cp-none small muted">No customers match “${esc(term)}”.</div>`) +
+    (res.length > shown.length ? `<div class="cp-more tiny muted">Showing ${shown.length} of ${res.length}. Keep typing to narrow it down.</div>` : '');
+  list.hidden = false; el.classList.add('open'); CPK.hi = -1;
+}
+function cpClose(el, restore = true) { const list = $('.cpick-list', el); list.hidden = true; el.classList.remove('open'); if (restore) { const c = byId('customers', $('input[type=hidden]', el).value); $('.cpick-q', el).value = c ? custName(c) : ''; } }
+function cpChoose(el, id) { const h = $('input[type=hidden]', el); h.value = id; cpClose(el); h.dispatchEvent(new Event('change', { bubbles: true })); }
+function cpAddForm(el) {
+  const term = $('.cpick-q', el).value.trim(); const isMail = /@/.test(term), isPh = !isMail && digits(term).length >= 6 && /^[\d\s()+-]+$/.test(term);
+  const list = $('.cpick-list', el);
+  list.innerHTML = `<div class="cp-form"><div class="small" style="font-weight:650;margin-bottom:8px">New customer</div>
+    <label class="f">Name<input type="text" data-nk="name" value="${esc(!isMail && !isPh ? term : '')}"></label><label class="f">Email<input type="email" data-nk="email" value="${esc(isMail ? term : '')}"></label><label class="f">Phone<input type="tel" data-nk="phone" value="${esc(isPh ? term : '')}"></label>
+    <div class="row" style="margin-top:10px"><button type="button" class="btn pri sm" data-cpadd="1">${icon('check')} Add customer</button><button type="button" class="btn ghost sm" data-cpcancel="1">Cancel</button></div></div>`;
+  list.hidden = false; el.classList.add('open', 'adding'); setTimeout(() => $('[data-nk=name]', list).focus(), 0);
+}
+document.addEventListener('focusin', e => { const q = e.target.closest && e.target.closest('.cpick-q'); if (q) { const el = q.closest('.cpick'); if (!el.classList.contains('adding')) { CPK.src = null; cpOpen(el); q.select(); } } });
+document.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('cpick-q')) { const el = e.target.closest('.cpick'); el.classList.remove('adding'); cpOpen(el); } });
+document.addEventListener('mousedown', e => { const r = e.target.closest && e.target.closest('.cp-row'); if (r) e.preventDefault(); }, true);
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.cpick-list') && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) e.preventDefault(); }, true);   // the picker sits inside a <label>: stop it refocusing the search box
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('.cp-row, [data-cpadd], [data-cpcancel]'); if (!t) return; const el = t.closest('.cpick'); if (!el) return;
+  if (t.dataset.cid) cpChoose(el, t.dataset.cid);
+  else if (t.dataset.new) cpAddForm(el);
+  else if (t.dataset.cpcancel) { el.classList.remove('adding'); cpClose(el); }
+  else if (t.dataset.cpadd) {
+    const o = { createdAt: new Date().toISOString() }; $$('[data-nk]', el).forEach(i => o[i.dataset.nk] = i.value.trim());
+    if (!o.name && !o.email) { toast('Enter a name or email'); return; }
+    if (!o.name) o.name = o.email.split('@')[0];
+    await save('customers', o); CPK.src = null; el.classList.remove('adding'); toast('Customer added'); cpChoose(el, o.id);
+  }
+});
+document.addEventListener('keydown', e => {
+  const q = e.target.classList && e.target.classList.contains('cpick-q') ? e.target : null; if (!q) return; const el = q.closest('.cpick'), rows = $$('.cp-row', el);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if ($('.cpick-list', el).hidden) cpOpen(el); CPK.hi = Math.max(0, Math.min(rows.length - 1, (CPK.hi ?? -1) + (e.key === 'ArrowDown' ? 1 : -1))); rows.forEach((r, i) => r.classList.toggle('hi', i === CPK.hi)); rows[CPK.hi]?.scrollIntoView({ block: 'nearest' }); }
+  else if (e.key === 'Enter') { e.preventDefault(); const r = rows[CPK.hi >= 0 ? CPK.hi : (rows.length > 1 && q.value.trim() ? 1 : -1)]; if (r) r.click(); }
+  else if (e.key === 'Escape') { cpClose(el); q.blur(); }
+});
+document.addEventListener('focusout', e => { const el = e.target.closest && e.target.closest('.cpick'); if (!el) return; setTimeout(() => { if (!el.contains(document.activeElement)) { el.classList.remove('adding'); cpClose(el); } }, 120); });
+
 const demoBanner = () => S.settings.demo ? `<div class="note pink no-print" style="margin-bottom:16px">${icon('alert')} <b>Demo data is loaded.</b> Everything here is fake sample data. When you're ready to use the app for real, go to Settings → Data → <b>Clear all data</b>.</div>` : '';
 
 /* ======================= DASHBOARD ======================= */
@@ -97,7 +162,7 @@ document.addEventListener('click', e => { const tr = e.target.closest('tr[data-h
 function newInvoice(kind, customerId) {
   const st = S.settings, { number, n } = nextNumber(kind), issue = today();
   return { id: '', kind, number, _n: n, customerId: customerId || '', issueDate: issue, dueDate: addDays(issue, +st.business.termsDays || 14), items: [], notes: '', sent: false,
-    deposit: { type: 'pct', value: st.depositPct }, depositDue: issue, balanceEmailDate: addDays(issue, +st.balanceDaysAfterIssue || +st.business.termsDays || 14), emailDeposit: true, emailBalance: true, createdAt: new Date().toISOString() };
+    deposit: depositDefault(st), depositDue: issue, balanceEmailDate: addDays(issue, +st.business.termsDays || 14), balanceDateManual: false, emailDeposit: true, emailBalance: true, createdAt: new Date().toISOString() };
 }
 V.invoice = async (view, [id], q) => {
   let inv;
@@ -114,24 +179,15 @@ V.invoice = async (view, [id], q) => {
     <div class="ed-layout">
       <div class="stack">
         <div class="card"><div class="grid g2">
-          <label class="f">Customer<div class="row nw"><select id="ie-cust">${custOptions(inv.customerId)}</select><button class="btn icon" id="ie-newcust" title="New customer">${icon('plus')}</button></div></label>
+          <label class="f">Customer<div class="row nw">${custPicker('ie-cust', inv.customerId)}<button class="btn icon" id="ie-newcust" title="New customer">${icon('plus')}</button></div></label>
           <label class="f">${isQ() ? 'Quote' : 'Invoice'} number<input type="text" id="ie-num" value="${esc(inv.number)}"></label>
           <label class="f">Issue date<input type="date" id="ie-issue" value="${inv.issueDate || ''}"></label>
           <label class="f">${isQ() ? 'Valid until' : 'Due date'}<input type="date" id="ie-due" value="${inv.dueDate || ''}"></label>
         </div>${!isQ() ? `<div class="row" style="margin-top:14px"><label class="chk"><input type="checkbox" id="ie-sent" ${inv.sent ? 'checked' : ''}> Sent to customer</label><span class="small muted">(drafts are excluded from outstanding totals; overdue = sent and past the due date)</span></div>` : `<div class="row" style="margin-top:14px"><label class="chk"><input type="checkbox" id="ie-sent" ${inv.sent ? 'checked' : ''}> Sent</label><label class="chk"><input type="checkbox" id="ie-acc" ${inv.accepted ? 'checked' : ''}> Accepted</label></div>`}</div>
 
-        <div class="card"><div class="card-h"><h2>Line items</h2><div class="spacer"></div>
-          <select id="ie-svc" style="max-width:240px"><option value="">+ Add from services…</option>${S.services.map(s => `<option value="${s.id}">${esc(s.name)} · ${money(s.price)}</option>`).join('')}</select>
-          <button class="btn sm" id="ie-addc">${icon('plus')} Custom item</button></div>
-          <div class="items"><div class="item h"><div>Description</div><div>Qty</div><div>Price (ex GST)</div><div>Disc %</div><div style="text-align:center">GST</div><div style="text-align:right">Amount</div><div></div></div>
-          ${inv.items.map((it, k) => `<div class="item" data-k="${k}">
-            <div class="desc"><input type="text" data-f="desc" value="${esc(it.desc)}" placeholder="Item name"><textarea data-f="details" placeholder="Details (optional)" rows="1">${esc(it.details || '')}</textarea></div>
-            <div><label class="m">Qty</label><input type="number" step="any" data-f="qty" value="${it.qty}"></div>
-            <div><label class="m">Price</label><input type="number" step="0.01" data-f="price" value="${it.price}"></div>
-            <div><label class="m">Disc %</label><input type="number" step="any" min="0" max="100" data-f="discountPct" value="${it.discountPct || 0}"></div>
-            <div class="gstc"><label class="m">GST</label><input type="checkbox" data-f="gst" ${it.gst ? 'checked' : ''}></div>
-            <div class="amt num" data-amt>${money(lineCalc(it).net)}</div>
-            <div><button class="btn ghost icon" data-del="${k}" title="Remove">${icon('trash')}</button></div></div>`).join('') || `<div class="empty">No items yet. Add one from your services list or a custom item.</div>`}</div>
+        <div class="card"><div class="card-h"><h2>Items</h2></div>
+          <div class="lines" id="ie-lines">${inv.items.map((it, k) => lineRow(it, k)).join('') || '<div class="lines-empty small muted">No items yet. Tap <b>Add items</b> to pick from your services or add a custom item.</div>'}</div>
+          <button type="button" class="btn add-items" id="ie-additems">${icon('plus')} Add items</button>
         </div>
         <div class="card"><label class="f">Notes / terms shown on the ${isQ() ? 'quote' : 'invoice'}<textarea id="ie-notes" placeholder="${esc(S.settings.business.paymentTerms)}">${esc(inv.notes || '')}</textarea></label></div>
         ${!isQ() ? `<div class="card"><div class="card-h"><span class="ic">${icon('mail')}</span><div><h2>Payment emails</h2><div class="small muted">Two scheduled emails go into your outbox. You'll see them on the dashboard on the day.</div></div></div>
@@ -142,7 +198,8 @@ V.invoice = async (view, [id], q) => {
               <label class="f">Send on<input type="date" id="ie-ddate" value="${inv.depositDue || inv.issueDate}"></label></div>
             <div class="stack"><label class="chk"><input type="checkbox" id="ie-ebal" ${inv.emailBalance !== false ? 'checked' : ''}> <b>2. Remaining balance email</b></label>
               <div class="small muted">Asks for whatever is unpaid on the day you send it.</div>
-              <label class="f">Send on<input type="date" id="ie-bdate" value="${inv.balanceEmailDate || inv.dueDate}"></label></div>
+              <label class="f">Send on<input type="date" id="ie-bdate" value="${(balanceFollowsDue(inv) ? inv.dueDate : inv.balanceEmailDate) || inv.dueDate || ''}"></label>
+              <div class="tiny muted" id="ie-bnote">${balanceFollowsDue(inv) ? 'Follows the due date.' : `Custom date (due date is ${fmtD(inv.dueDate)}). <a href="#" id="ie-bfollow">Use the due date</a>`}</div></div>
           </div></div>` : ''}
       </div>
       <div class="stack sticky">
@@ -166,7 +223,6 @@ V.invoice = async (view, [id], q) => {
   };
   const recalc = () => {
     const c = invCalc(inv); $('#t-sub').textContent = money(c.gross); $('#t-gst').textContent = money(c.gst); $('#t-tot').textContent = money(c.total);
-    $$('.items .item[data-k]').forEach(r => r.querySelector('[data-amt]').textContent = money(lineCalc(inv.items[+r.dataset.k]).net));
     if ($('#ie-damt')) $('#ie-damt').textContent = money(depositAmount(inv, c));
   };
   const bind = () => {
@@ -174,25 +230,20 @@ V.invoice = async (view, [id], q) => {
     v('ie-cust').onchange = e => { inv.customerId = e.target.value; dirty = true; };
     v('ie-num').oninput = e => { inv.number = e.target.value.trim(); dirty = true; };
     v('ie-issue').onchange = e => { const old = inv.issueDate; inv.issueDate = e.target.value; if (inv.depositDue === old) inv.depositDue = inv.issueDate; dirty = true; draw(); };
-    v('ie-due').onchange = e => { const old = inv.dueDate; inv.dueDate = e.target.value; if (!inv.balanceEmailDate || inv.balanceEmailDate === old) inv.balanceEmailDate = inv.dueDate; dirty = true; draw(); };
+    v('ie-due').onchange = e => { const follow = balanceFollowsDue(inv); inv.dueDate = e.target.value; if (follow) { inv.balanceEmailDate = inv.dueDate; inv.balanceDateManual = false; } dirty = true; draw(); };
     v('ie-sent').onchange = e => { inv.sent = e.target.checked; dirty = true; };
     if (v('ie-acc')) v('ie-acc').onchange = e => { inv.accepted = e.target.checked; dirty = true; };
     v('ie-notes').oninput = e => { inv.notes = e.target.value; dirty = true; };
-    v('ie-svc').onchange = e => { const s = byId('services', e.target.value); if (s) { inv.items.push({ desc: s.name, details: s.description || '', qty: 1, price: num(s.price), discountPct: 0, gst: s.gst !== false && gstOn, serviceId: s.id }); dirty = true; draw(); } };
-    v('ie-addc').onclick = () => { inv.items.push({ desc: '', details: '', qty: 1, price: 0, discountPct: 0, gst: gstOn }); dirty = true; draw(); const r = $$('.items .item[data-k] input[data-f=desc]'); r[r.length - 1]?.focus(); };
-    $$('.items .item[data-k]').forEach(r => {
-      const it = inv.items[+r.dataset.k];
-      r.addEventListener('input', e => { const f = e.target.dataset.f; if (!f) return; it[f] = e.target.type === 'checkbox' ? e.target.checked : e.target.type === 'number' ? num(e.target.value) : e.target.value; dirty = true; recalc(); });
-      r.addEventListener('change', e => { if (e.target.type === 'checkbox') { it.gst = e.target.checked; dirty = true; recalc(); } });
-    });
-    $$('[data-del]').forEach(b => b.onclick = () => { inv.items.splice(+b.dataset.del, 1); dirty = true; draw(); });
+    $$('#ie-lines .line').forEach(r => r.onclick = () => { const k = +r.dataset.k; itemSheet(inv.items[k], gstOn, it => { inv.items[k] = it; dirty = true; draw(); }, () => { inv.items.splice(k, 1); dirty = true; draw(); }); });
+    v('ie-additems').onclick = () => servicePicker(gstOn, items => { inv.items.push(...items); dirty = true; draw(); });
     if (v('ie-edep')) {
       v('ie-edep').onchange = e => { inv.emailDeposit = e.target.checked; dirty = true; };
       v('ie-ebal').onchange = e => { inv.emailBalance = e.target.checked; dirty = true; };
       $$('#ie-dtype button').forEach(b => b.onclick = () => { const c = invCalc(inv); const cur = depositAmount(inv, c); inv.deposit = b.dataset.v === 'amt' ? { type: 'amt', value: cur } : { type: 'pct', value: c.total ? r2(cur / c.total * 100) : S.settings.depositPct }; dirty = true; draw(); });
       v('ie-dval').oninput = e => { inv.deposit.value = num(e.target.value); dirty = true; recalc(); };
       v('ie-ddate').onchange = e => { inv.depositDue = e.target.value; dirty = true; };
-      v('ie-bdate').onchange = e => { inv.balanceEmailDate = e.target.value; dirty = true; };
+      v('ie-bdate').onchange = e => { const d = e.target.value; if (!d || d === inv.dueDate) { inv.balanceEmailDate = inv.dueDate; inv.balanceDateManual = false; } else { inv.balanceEmailDate = d; inv.balanceDateManual = true; } dirty = true; draw(); };
+      if (v('ie-bfollow')) v('ie-bfollow').onclick = e => { e.preventDefault(); inv.balanceEmailDate = inv.dueDate; inv.balanceDateManual = false; dirty = true; draw(); };
     }
     v('ie-newcust').onclick = () => editCustomerModal(null, async c => { inv.customerId = c.id; dirty = true; draw(); });
     v('ie-save').onclick = async () => { if (await doSave()) { toast('Saved'); if (id === 'new') { leaveGuard = null; location.replace('#/invoice/' + inv.id); } else draw(); } };
@@ -208,17 +259,61 @@ V.invoice = async (view, [id], q) => {
     await syncInvoiceEmails(inv); dirty = false; renderNav(); return true;
   };
   leaveGuard = () => !dirty || confirm('You have unsaved changes. Leave without saving?');
+  leaveGuard.clean = () => !dirty && !!inv.id;   // lets a sync redraw a saved, unchanged invoice
   draw();
 };
 
+/* ---------- line item rows, item edit sheet, service picker ---------- */
+const fmtQty = q => { const n = num(q); return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); };
+const lineRow = (it, k) => `<button type="button" class="line" data-k="${k}"><div class="grow"><div class="ln-t">${esc(it.desc || 'Untitled item')}</div>${it.details ? `<div class="ln-d">${esc(it.details)}</div>` : ''}<div class="ln-q num">${fmtQty(it.qty)} x ${money(it.price)}${num(it.discountPct) ? ` · ${num(it.discountPct)}% off` : ''}${it.gst ? ' · GST' : ''}</div></div><div class="ln-a num">${money(lineCalc(it).net)}</div>${icon('chev', 'ln-c')}</button>`;
+function itemSheet(item, gstOn, onDone, onRemove) {
+  const isNew = !item, it = Object.assign({ desc: '', details: '', qty: 1, price: 0, discountPct: 0, gst: gstOn }, structuredClone(item || {}));
+  const m = openModal({ title: isNew ? 'Custom item' : 'Edit item', body: `<div class="stack">
+    <label class="f">Item<input type="text" id="it-desc" value="${esc(it.desc)}" placeholder="Item name"></label>
+    <label class="f">Description<textarea id="it-details" rows="3" placeholder="Optional">${esc(it.details || '')}</textarea></label>
+    <div class="grid g2"><label class="f">Quantity<input type="number" inputmode="decimal" step="any" id="it-qty" value="${it.qty}"></label><label class="f">Price (ex GST)<input type="number" inputmode="decimal" step="0.01" id="it-price" value="${it.price}"></label></div>
+    <div class="grid g2" style="align-items:end"><label class="f">Discount %<input type="number" inputmode="decimal" step="any" min="0" max="100" id="it-disc" value="${num(it.discountPct) || 0}"></label><label class="chk" style="padding-bottom:10px"><input type="checkbox" id="it-gst" ${it.gst ? 'checked' : ''}> Add GST (10%)</label></div>
+    ${isNew ? '<label class="chk"><input type="checkbox" id="it-savesvc"> Also save to my services</label>' : ''}
+    <div class="it-total"><span class="muted">Line total (ex GST)</span><b class="num" id="it-tot"></b></div></div>`,
+    foot: `${!isNew ? `<button class="btn danger" id="it-rm">${icon('trash')} Remove</button>` : ''}<div class="spacer"></div><button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn pri" id="it-ok">${icon('check')} ${isNew ? 'Add item' : 'Done'}</button>` });
+  m.classList.add('sheet');
+  const read = () => { it.desc = $('#it-desc', m).value.trim(); it.details = $('#it-details', m).value.trim(); it.qty = num($('#it-qty', m).value); it.price = r2(num($('#it-price', m).value)); it.discountPct = Math.min(100, Math.max(0, num($('#it-disc', m).value))); it.gst = $('#it-gst', m).checked; };
+  const tot = () => { read(); const c = lineCalc(it); $('#it-tot', m).textContent = money(c.net) + (c.gst ? ` + ${money(c.gst)} GST` : ''); };
+  m.addEventListener('input', tot); m.addEventListener('change', tot); tot();
+  $('#it-ok', m).onclick = async () => { read(); if (!it.desc) { toast('Enter an item name'); $('#it-desc', m).focus(); return; }
+    if (isNew && $('#it-savesvc', m)?.checked) { const sv = await save('services', { name: it.desc, description: it.details, price: it.price, unit: '', gst: it.gst }); it.serviceId = sv.id; }
+    closeModal(); onDone(it); };
+  if (!isNew) $('#it-rm', m).onclick = () => { closeModal(); onRemove(); };
+  if (isNew) setTimeout(() => $('#it-desc', m).focus(), 50);
+}
+function servicePicker(gstOn, onAdd) {
+  const list = [...S.services].sort((a, b) => a.name.localeCompare(b.name)); const added = [];
+  const m = openModal({ title: 'Add items', body: `<div class="cpick-box" style="margin-bottom:12px">${icon('search')}<input type="text" id="sp-q" autocomplete="off" placeholder="Search services…"></div>
+    <div class="lines" id="sp-list"></div>`,
+    foot: `<span class="small muted" id="sp-n"></span><div class="spacer"></div><button class="btn pri" id="sp-done">${icon('check')} Done</button>` });
+  m.classList.add('sheet');
+  const rowsHTML = q => { const t = q.trim().toLowerCase(); const f = list.filter(x => !t || (x.name + ' ' + (x.description || '')).toLowerCase().includes(t));
+    return `<button type="button" class="line sp-custom" data-custom="1"><span class="sp-ic">${icon('plus')}</span><div class="grow"><div class="ln-t">Custom item</div><div class="ln-q">Type your own item, price and description</div></div>${icon('chev', 'ln-c')}</button>` +
+      f.map(x => `<button type="button" class="line" data-sid="${x.id}"><div class="grow"><div class="ln-t">${esc(x.name)}</div>${x.description ? `<div class="ln-d">${esc(x.description)}</div>` : ''}<div class="ln-q num">${money(x.price)}${x.unit ? ' / ' + esc(x.unit) : ''}${x.gst !== false && gstOn ? ' · GST' : ''}</div></div><span class="sp-badge" data-badge="${x.id}" hidden></span><span class="sp-ic add">${icon('plus')}</span></button>`).join('') +
+      (!f.length && list.length ? `<div class="lines-empty small muted">No services match “${esc(q)}”.</div>` : '') + (!list.length ? '<div class="lines-empty small muted">No services yet. Add them under Services, or add a custom item.</div>' : ''); };
+  const draw = () => { $('#sp-list', m).innerHTML = rowsHTML($('#sp-q', m).value); for (const id of new Set(added.map(a => a.serviceId))) { const b = $(`[data-badge="${id}"]`, m); if (b) { b.hidden = false; b.textContent = '✓ ' + added.filter(a => a.serviceId === id).length; } } };
+  const finish = () => closeModal();   // _onClose hands over what was added
+  $('#sp-q', m).oninput = draw; draw();
+  $('#sp-list', m).onclick = e => { const r = e.target.closest('.line'); if (!r) return;
+    if (r.dataset.custom) { closeModal(); itemSheet(null, gstOn, it => onAdd([it]), () => { }); return; }
+    const sv = byId('services', r.dataset.sid); if (!sv) return;
+    added.push({ desc: sv.name, details: sv.description || '', qty: 1, price: num(sv.price), discountPct: 0, gst: sv.gst !== false && gstOn, serviceId: sv.id });
+    $('#sp-n', m).textContent = `${added.length} item${added.length === 1 ? '' : 's'} added`; draw(); };
+  $('#sp-done', m).onclick = finish; m._onClose = () => { if (added.length) onAdd(added.splice(0)); };
+}
 ACT['dup-invoice'] = async el => {
   const src = byId('invoices', el.dataset.id); const n = newInvoice(src.kind, src.customerId);
-  const copy = Object.assign(structuredClone(src), { id: '', number: n.number, issueDate: n.issueDate, dueDate: n.dueDate, depositDue: n.issueDate, balanceEmailDate: n.balanceEmailDate, sent: false, accepted: false, sentAt: null, createdAt: new Date().toISOString() });
+  const copy = Object.assign(structuredClone(src), { id: '', number: n.number, issueDate: n.issueDate, dueDate: n.dueDate, depositDue: n.issueDate, balanceEmailDate: n.balanceEmailDate, balanceDateManual: false, sent: false, accepted: false, sentAt: null, createdAt: new Date().toISOString() });
   await save('invoices', copy); await bumpNumber(src.kind, n._n); await syncInvoiceEmails(copy); toast('Duplicated as ' + copy.number); go('invoice/' + copy.id);
 };
 ACT['convert-quote'] = async el => {
   const src = byId('invoices', el.dataset.id); const n = newInvoice('invoice', src.customerId);
-  const inv = Object.assign(structuredClone(src), { id: '', kind: 'invoice', number: n.number, issueDate: n.issueDate, dueDate: n.dueDate, depositDue: n.issueDate, balanceEmailDate: n.balanceEmailDate, deposit: n.deposit, emailDeposit: true, emailBalance: true, sent: false, fromQuote: src.number, createdAt: new Date().toISOString() });
+  const inv = Object.assign(structuredClone(src), { id: '', kind: 'invoice', number: n.number, issueDate: n.issueDate, dueDate: n.dueDate, depositDue: n.issueDate, balanceEmailDate: n.balanceEmailDate, balanceDateManual: false, deposit: n.deposit, emailDeposit: true, emailBalance: true, sent: false, fromQuote: src.number, createdAt: new Date().toISOString() });
   await save('invoices', inv); await bumpNumber('invoice', n._n); src.accepted = true; await save('invoices', src); await syncInvoiceEmails(inv); toast('Created invoice ' + inv.number); go('invoice/' + inv.id);
 };
 ACT['del-invoice'] = async el => {
@@ -376,10 +471,9 @@ V.customer = async (view, [id]) => {
 /* ======================= SERVICES ======================= */
 V.services = async view => {
   view.innerHTML = `${pageH('Services', 'Your price list. Pick these when adding invoice lines.', `<button class="btn pri" id="sv-new">${icon('plus')} New service</button>`)}
-  <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Service</th><th>Description</th><th class="right">Price (ex GST)</th><th>GST</th><th></th></tr></thead><tbody>
-  ${[...S.services].sort((a, b) => a.name.localeCompare(b.name)).map(s => `<tr class="click" data-act="edit-service" data-id="${s.id}"><td><b>${esc(s.name)}</b></td><td class="muted small" style="white-space:pre-wrap">${esc(s.description || '')}</td><td class="right num">${money(s.price)}${s.unit ? ` <span class="muted small">/ ${esc(s.unit)}</span>` : ''}</td><td>${s.gst !== false ? 'Yes' : 'No'}</td><td class="right">${icon('edit')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">No services yet. Add the things you sell.</td></tr>'}
-  </tbody></table></div></div>`;
-  $('#sv-new').onclick = () => editServiceModal(null);
+  <div class="card" style="max-width:820px"><div class="lines">${[...S.services].sort((a, b) => a.name.localeCompare(b.name)).map(sv => `<button type="button" class="line" data-act="edit-service" data-id="${sv.id}"><div class="grow"><div class="ln-t">${esc(sv.name)}</div>${sv.description ? `<div class="ln-d">${esc(sv.description)}</div>` : ''}<div class="ln-q">${sv.gst !== false ? 'GST' : 'No GST'}${sv.unit ? ' · per ' + esc(sv.unit) : ''}</div></div><div class="ln-a num">${money(sv.price)}</div>${icon('chev', 'ln-c')}</button>`).join('') || '<div class="lines-empty small muted">No services yet. Add your usual items and prices so invoices are quick to make.</div>'}</div>
+  <button type="button" class="btn add-items" id="sv-new2">${icon('plus')} Add a service</button></div>`;
+  $('#sv-new').onclick = $('#sv-new2').onclick = () => editServiceModal(null);
 };
 ACT['edit-service'] = el => editServiceModal(byId('services', el.dataset.id));
 function editServiceModal(s) {

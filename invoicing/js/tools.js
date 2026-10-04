@@ -165,7 +165,7 @@ function contractVars(cu, inv) {
 function newContractModal(custId) {
   if (!S.contractTemplates.length) { toast('Create a contract template first'); go('contracts?t=tpl'); return; }
   const m = openModal({ title: 'New contract', wide: true, body: `<div class="grid g3"><label class="f">Template<select id="nk-t">${S.contractTemplates.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label>
-    <label class="f">Customer<select id="nk-c">${custOptions(custId)}</select></label><label class="f">Invoice / quote (optional)<select id="nk-i"></select></label></div>
+    <label class="f">Customer${custPicker('nk-c', custId)}</label><label class="f">Invoice / quote (optional)<select id="nk-i"></select></label></div>
     <div class="stack" style="margin-top:16px"><label class="f">Title<input type="text" id="nk-title"></label><div id="nk-warn"></div><label class="f">Contract text (edit freely; this exact text is what gets signed)<textarea id="nk-body" style="min-height:300px"></textarea></label></div>`,
     foot: `<button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn pri" id="nk-ok">${icon('link')} Create signing link</button>` });
   const fillInv = () => { const c = $('#nk-c', m).value; const list = S.invoices.filter(i => i.customerId === c).sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''));
@@ -257,7 +257,7 @@ function editFormModal(f) {
 }
 function sendFormModal(formId, custId) {
   if (!S.forms.length) { toast('Create a questionnaire first'); return; }
-  const m = openModal({ title: 'Send questionnaire', body: `<div class="stack"><label class="f">Questionnaire<select id="sf-f">${S.forms.map(f => `<option value="${f.id}" ${f.id === formId ? 'selected' : ''}>${esc(f.title)}</option>`).join('')}</select></label><label class="f">Customer<select id="sf-c">${custOptions(custId)}</select></label></div>`,
+  const m = openModal({ title: 'Send questionnaire', body: `<div class="stack"><label class="f">Questionnaire<select id="sf-f">${S.forms.map(f => `<option value="${f.id}" ${f.id === formId ? 'selected' : ''}>${esc(f.title)}</option>`).join('')}</select></label><label class="f">Customer${custPicker('sf-c', custId)}</label></div>`,
     foot: `<button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn pri" id="sf-ok">${icon('link')} Create link &amp; email</button>` });
   $('#sf-ok', m).onclick = async () => {
     const f = byId('forms', $('#sf-f', m).value), cu = byId('customers', $('#sf-c', m).value); if (!cu) { toast('Choose a customer'); return; }
@@ -279,7 +279,7 @@ ACT['import-answers'] = el => {
     catch (e) { parsed = t.trim() ? { title: 'Questionnaire answers (pasted text)', answers: [['Answers', t.trim()]], customerId: pre, raw: true } : null; }
     if (!parsed) { prev.innerHTML = ''; $('#ia-ok', m).disabled = true; return; }
     prev.innerHTML = `${parsed.raw ? '<div class="note pink">No answer code found, so the pasted text will be saved as-is.</div>' : `<div class="note">Found answers to <b>${esc(parsed.title)}</b>${parsed.from ? ' from ' + esc(parsed.from) : ''}.</div>`}
-      <label class="f" style="margin-top:12px">Customer<select id="ia-c">${custOptions(parsed.customerId)}</select></label>
+      <label class="f" style="margin-top:12px">Customer${custPicker('ia-c', parsed.customerId)}</label>
       <table class="tbl" style="margin-top:10px">${parsed.answers.map(([q2, a]) => `<tr><td class="muted" style="width:40%">${esc(q2)}</td><td style="white-space:pre-wrap">${esc(a)}</td></tr>`).join('')}</table>`;
     $('#ia-ok', m).disabled = false;
   };
@@ -487,8 +487,12 @@ V.settings = async (view, _, q) => {
     bindSave();
   } else if (tab === 'invoices') {
     body.innerHTML = `<div class="card" style="max-width:720px"><div class="grid g2">${field('invPrefix', 'Invoice prefix', 'text', 's')}${field('invNext', 'Next invoice number', 'number', 's')}${field('quotePrefix', 'Quote prefix', 'text', 's')}${field('quoteNext', 'Next quote number', 'number', 's')}
-      ${field('depositPct', 'Default deposit %', 'number', 's')}${field('balanceDaysAfterIssue', 'Balance email: days after issue', 'number', 's')}</div>
+      ${(() => { const d = depositDefault(st); return `<label class="f">Default deposit on new invoices<select data-s="depositType" id="st-dtype"><option value="amt" ${d.type === 'amt' ? 'selected' : ''}>Fixed amount ($)</option><option value="pct" ${d.type === 'pct' ? 'selected' : ''}>Percentage of the total (%)</option></select></label>
+      <label class="f" id="st-damt-l" ${d.type === 'pct' ? 'hidden' : ''}>Deposit amount ($)<input type="number" step="0.01" min="0" data-s="depositAmount" value="${d.type === 'amt' ? d.value : (st.depositAmount ?? 100)}"></label>
+      <label class="f" id="st-dpct-l" ${d.type === 'amt' ? 'hidden' : ''}>Deposit %<input type="number" step="any" min="0" max="100" data-s="depositPct" value="${esc(st.depositPct ?? 50)}"></label>`; })()}</div>
+      <p class="small muted">Each invoice can still have its own deposit. The remaining-balance email is scheduled for the invoice's due date and moves with it, unless you pick a different date on that invoice.</p>
       <p class="small muted">Next invoice will be <b>${esc(nextNumber('invoice').number)}</b>. Numbers already used are skipped automatically.</p>${saveBtn}</div>`;
+    $('#st-dtype').onchange = e => { $('#st-damt-l').hidden = e.target.value !== 'amt'; $('#st-dpct-l').hidden = e.target.value !== 'pct'; };
     bindSave();
   } else if (tab === 'emails') templatesEditor(body);
   else if (tab === 'cloud') await cloudTab(body);

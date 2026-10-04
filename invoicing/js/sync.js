@@ -222,7 +222,10 @@ async function downloadAllReceipts(onProgress) {
   return { total: fs.length, fail };
 }
 function refreshAfterSync() {
-  if ($('#modal-root .modal-bg') || leaveGuard) { SY.pendingRender = true; renderNav(); return; }
+  // an open editor with no unsaved changes (and nothing being typed) is redrawn so it shows the other device's edit
+  const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && $('#view').contains(document.activeElement);
+  const cleanEditor = leaveGuard && leaveGuard.clean && leaveGuard.clean() && !typing;
+  if ($('#modal-root .modal-bg') || (leaveGuard && !cleanEditor)) { SY.pendingRender = true; renderNav(); return; }
   SY.pendingRender = false; render();
 }
 

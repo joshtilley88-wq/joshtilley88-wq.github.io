@@ -54,7 +54,7 @@ function defaultSettings() {
     business: { name: '', abn: '', address: '', email: '', phone: '', website: '', bankName: '', bsb: '', account: '', accountName: '', paymentTerms: 'Payment due within 14 days. Please use the invoice number as the payment reference.', termsDays: 14, gstRegistered: true },
     logo: '',
     invPrefix: 'INV-', invNext: 1001, quotePrefix: 'Q-', quoteNext: 1,
-    depositPct: 50, balanceDaysAfterIssue: 14,
+    depositPct: 50, depositAmount: 100, balanceDaysAfterIssue: 14,   // depositType ('amt' | 'pct') is only stored once chosen in Settings: see depositDefault()
     expenseCategories: ['Materials', 'Equipment', 'Software & subscriptions', 'Vehicle & travel', 'Fuel', 'Phone & internet', 'Insurance', 'Advertising', 'Office supplies', 'Rent', 'Professional fees', 'Bank fees', 'Other'],
     templates: {
       deposit: { subject: 'Deposit invoice {invoice_no} from {business}', body: 'Hi {client_first},\n\nThanks for choosing {business}. Please find invoice {invoice_no} for {total}.\n\nTo get started we ask for a deposit of {deposit_amount} ({deposit_pct}), due by {deposit_due}.\n\n{bank_details}\n\nPlease use {invoice_no} as your payment reference.\n\nKind regards,\n{business}\n{business_phone}' },
@@ -94,6 +94,21 @@ function depositAmount(inv, c = invCalc(inv)) {
   const d = inv.deposit || { type: 'pct', value: S.settings.depositPct };
   return d.type === 'amt' ? r2(Math.min(num(d.value), c.total)) : r2(c.total * num(d.value) / 100);
 }
+/* Deposit for NEW invoices: a fixed $100 by default. Settings can switch to a percentage. If no deposit type was ever
+ * saved, a deposit % she changed from the old built-in 50% is respected; the untouched 50% default becomes $100. */
+function depositDefault(st = S.settings) {
+  if (st.depositType === 'pct') return { type: 'pct', value: num(st.depositPct) };
+  if (st.depositType === 'amt') return { type: 'amt', value: st.depositAmount === '' || st.depositAmount == null ? 100 : num(st.depositAmount) };
+  return st.depositPct == null || +st.depositPct === 50 ? { type: 'amt', value: 100 } : { type: 'pct', value: num(st.depositPct) };
+}
+/* The remaining-balance email goes out on the due date unless she picked a different date for that invoice.
+ * balanceDateManual: true = she chose a date; false/absent = follow the due date. Older invoices (no flag) follow
+ * the due date if their balance date was the same as the due date (or empty), otherwise their date is kept. */
+function balanceFollowsDue(inv) {
+  if (inv.balanceDateManual === true) return false;
+  if (inv.balanceDateManual === false) return true;
+  return !inv.balanceEmailDate || inv.balanceEmailDate === inv.dueDate;
+}
 function nextNumber(kind) {
   const st = S.settings; const pre = kind === 'quote' ? st.quotePrefix : st.invPrefix; let n = +(kind === 'quote' ? st.quoteNext : st.invNext) || 1;
   const used = new Set(S.invoices.map(i => i.number));
@@ -129,7 +144,7 @@ function invoiceVars(inv, extra = {}) {
     client: cu.name || cu.business || 'there', client_first: (cu.name || cu.business || 'there').split(' ')[0], client_business: cu.business || '', client_email: cu.email || '',
     invoice_no: inv.number, total: money(c.total), subtotal: money(c.sub), gst: money(c.gst), paid: money(c.paid), balance: money(c.balance), amount: money(c.balance),
     issue_date: fmtD(inv.issueDate), due_date: fmtD(inv.dueDate), deposit_amount: money(dep), deposit_pct: d.type === 'amt' ? money(dep) : num(d.value) + '%', deposit_due: fmtD(inv.depositDue || inv.issueDate),
-    balance_date: fmtD(inv.balanceEmailDate || inv.dueDate),
+    balance_date: fmtD((balanceFollowsDue(inv) ? inv.dueDate : inv.balanceEmailDate) || inv.dueDate),
   }, extra));
 }
 /* build subject/body for an outbox entry from current data (unless user edited it) */
@@ -153,11 +168,11 @@ async function syncInvoiceEmails(inv) {
   if (inv.kind === 'quote') return;
   const want = [];
   if (inv.emailDeposit !== false) want.push(['deposit', inv.depositDue || inv.issueDate || today()]);
-  if (inv.emailBalance !== false) want.push(['balance', inv.balanceEmailDate || inv.dueDate || today()]);
+  if (inv.emailBalance !== false) want.push(['balance', (balanceFollowsDue(inv) ? inv.dueDate : inv.balanceEmailDate) || inv.dueDate || today()]);
   for (const [type, date] of want) {
     let e = S.outbox.find(x => x.invoiceId === inv.id && x.type === type);
     if (!e) e = { type, invoiceId: inv.id, status: 'queued', createdAt: new Date().toISOString() };
-    if (e.status !== 'sent') { e.scheduledDate = date; e.customerId = inv.customerId; await save('outbox', e); }
+    if (e.status !== 'sent' && (!e.id || e.scheduledDate !== date || e.customerId !== inv.customerId)) { e.scheduledDate = date; e.customerId = inv.customerId; await save('outbox', e); }
   }
   for (const e of S.outbox.filter(x => x.invoiceId === inv.id && x.status !== 'sent' && ((x.type === 'deposit' && inv.emailDeposit === false) || (x.type === 'balance' && inv.emailBalance === false)))) await remove('outbox', e.id);
 }

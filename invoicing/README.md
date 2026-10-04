@@ -52,6 +52,12 @@ Live at https://joshtilley88-wq.github.io/invoicing/
 * **Keep-alive:** Free projects pause after 7 idle days. `.github/workflows/supabase-keepalive.yml` (repo root) calls `heartbeat()` with the anon key daily. GitHub disables scheduled workflows after 60 days without repo commits; re-enable it in the Actions tab if that happens.
 * Tests (box, `/workspace/tools`): `rls-test.js` (two users can't see each other's rows/files), `cloud-flows.js` (migration counts/cents, two-device offline edits and conflicts, tombstones, merge prompt), plus `flows.js`, `backup-flows.js`, `migrate.js`.
 
+## Invoice editor notes
+* Items show as card rows (name, 2-line description, "qty x price", line total). Tap a row to edit qty, price, description, discount, GST or remove it. **Add items** opens a searchable service picker (tap to add, several at once) with a **Custom item** option ("Also save to my services").
+* Customer fields (invoice, contract, questionnaire, import answers) are a type-to-search picker over name, business, email and phone (digits only, `+61` = `0`), showing at most 60 matches at a time so it stays fast with hundreds of customers. **Add new customer** works inline, including inside modals.
+* The remaining-balance email is scheduled for the **due date** and moves with it (the queued outbox email too). Picking a different date on that invoice is an override (`balanceDateManual: true`) until **Use the due date** is tapped. Older invoices whose balance date already differed from the due date keep their date.
+* New invoices default to a **fixed $100 deposit** (Settings → Invoices & numbering: fixed amount or percentage). If a deposit % other than the old built-in 50% was saved, that percentage stays the default.
+
 ## Email-due notifications
 * When the app opens, if any queued emails are due today or overdue, it shows one system notification via the service worker ("2 invoice emails due today"), at most once a day. Tapping it opens the email outbox.
 * Permission is only requested from the **Turn on email reminders** button (Settings → Data) or the one-time dashboard prompt, never on page load. On iPhone, notifications only work once the app has been added to the Home Screen (iOS 16.4+).

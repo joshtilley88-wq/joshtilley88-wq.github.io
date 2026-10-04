@@ -245,3 +245,42 @@ input[type=checkbox], input[type=radio] { accent-color: var(--pink); width: 18px
 .dr-prog { height: 6px; border-radius: 6px; background: var(--lav-tt); margin-top: 10px; overflow: hidden; }
 .dr-prog > div { height: 100%; width: 0; background: var(--grad); transition: width .2s; }
 .sync-pill { color: var(--muted); } .sync-pill[data-state="error"], .sync-pill[data-state="signed-out"] { color: var(--bad); } .sync-pill[data-state="offline"] { color: var(--pink-d); }
+
+/* ---- line items as card rows (invoice editor, services, service picker) ---- */
+.lines { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: #fff; }
+.lines:empty { display: none; }
+.line { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: #fff; border: 0; border-bottom: 1px solid var(--line); padding: 14px 14px 14px 16px; cursor: pointer; min-height: 64px; }
+.line:last-child { border-bottom: 0; }
+.line:hover, .line:focus-visible { background: var(--pink-tt); outline: none; }
+.line .grow { flex: 1; min-width: 0; }
+.ln-t { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ln-d { color: var(--muted); font-size: 13.5px; line-height: 1.4; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; }
+.ln-q { color: var(--ink); font-size: 13.5px; margin-top: 4px; opacity: .85; }
+.ln-a { font-weight: 700; white-space: nowrap; color: var(--ink); }
+.ln-c { color: #C9C3D3; width: 18px; height: 18px; }
+.lines-empty { padding: 18px 16px; }
+.btn.add-items { width: 100%; justify-content: center; margin-top: 12px; border: 1.5px solid var(--pink); color: var(--pink-d); background: #fff; border-radius: 999px; padding: 12px 16px; font-weight: 650; }
+.btn.add-items:hover { background: var(--pink-tt); }
+.sp-ic { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; align-items: center; justify-content: center; background: var(--lav-tt); color: var(--lav); flex: none; }
+.sp-ic.add { background: var(--pink-tt); color: var(--pink-d); }
+.sp-ic svg.i { width: 16px; height: 16px; }
+.sp-badge { font-size: 12px; font-weight: 700; color: var(--ok); background: var(--ok-t); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.it-total { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--lav-tt); }
+
+/* ---- customer picker ---- */
+.cpick { position: relative; flex: 1; min-width: 0; }
+.cpick-box { font-size: 15px; font-weight: 400; display: flex; align-items: center; gap: 8px; border: 1px solid #E3E0EA; border-radius: var(--r-s); background: #fff; padding: 0 12px; }
+.cpick-box:focus-within { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-tt); }
+.cpick-box svg.i { color: var(--muted); width: 18px; height: 18px; }
+.cpick-box input { font-size: 15px; font-weight: 400; color: var(--ink); border: 0 !important; box-shadow: none !important; outline: none; padding: 10px 0; flex: 1; min-width: 0; background: transparent; }
+.cpick-list { color: var(--ink); font-weight: 400; font-size: 15px; text-transform: none; letter-spacing: 0; position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 32px rgba(43, 34, 54, .16); max-height: min(52vh, 380px); overflow: auto; -webkit-overflow-scrolling: touch; }
+.cp-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.cp-row:last-child { border-bottom: 0; }
+.cp-row:hover, .cp-row.hi { background: var(--pink-tt); }
+.cp-row.sel .cp-n { color: var(--pink-d); }
+.cp-row .grow { flex: 1; min-width: 0; }
+.cp-n { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-s { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-add { color: var(--pink-d); position: sticky; top: 0; background: #fff; z-index: 1; }
+.cp-none, .cp-more { padding: 10px 14px; }
+.cp-form { padding: 14px; display: flex; flex-direction: column; gap: 8px; }

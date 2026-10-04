@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" role="img" aria-label="InvoiceMate">
+  <g transform="translate(4 8) scale(.84)">
+    <rect x="2" y="2" width="96" height="96" rx="22" fill="#3A3D42"/>
+    <path d="M23 76V27l27 30 27-30v20" fill="none" stroke="#FF7A00" stroke-width="13" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M49 66l11 11 22-25" fill="none" stroke="#3A3D42" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M49 66l11 11 22-25" fill="none" stroke="#FF7A00" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="102" y="68" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="50" font-weight="600" letter-spacing="-1"><tspan fill="#3A3D42">Invoice</tspan><tspan fill="#FF7A00">Mate</tspan></text>
+</svg>

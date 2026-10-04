@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>InvoiceMate</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; frame-src 'self' blob:; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#2B2F36">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="InvoiceMate">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="im.css">
+</head>
+<body>
+<div id="pager">
+  <!-- 1. CLEAN SCREEN (home): logo, text box, big mic -->
+  <section id="clean" class="pane" aria-label="Talk to make an invoice">
+    <button class="im-menu-btn" data-act="more-menu" aria-label="Menu"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    <div class="clean-wrap">
+      <h1 id="im-logo" class="clean-logo" aria-label="InvoiceMate"></h1>
+      <div class="im-box">
+        <textarea id="im-text" rows="5" aria-label="Describe the job" placeholder="Say or type the job, e.g. “Invoice for Dave at 12 Smith St, replaced the hot water service, three hours labour plus call-out.”"></textarea>
+        <button id="im-go" class="btn pri im-go" disabled>Make invoice <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
+      </div>
+      <div id="im-status" class="im-status" role="status" aria-live="polite"></div>
+      <button id="im-mic" class="mic-btn" aria-label="Start talking" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+      <div class="im-hint">Swipe left for invoices, customers &amp; expenses</div>
+    </div>
+  </section>
+  <!-- 2. FULL APP SCREEN (Allyce's app layout) -->
+  <section id="full" class="pane" aria-label="Full app">
+    <div id="app">
+      <aside class="sidebar" id="sidebar"></aside>
+      <main class="main"><div id="view" class="view"></div></main>
+      <nav class="bottomnav" id="bottomnav"></nav>
+    </div>
+  </section>
+</div>
+<div id="im-dots" class="im-dots" aria-label="Screens"><button data-p="0" aria-label="Talk screen"></button><button data-p="1" aria-label="Full app"></button></div>
+<input type="file" id="im-cam" accept="image/*" capture="environment" hidden>
+<div id="public" class="public" hidden></div>
+<div id="modal-root"></div>
+<div id="toast" class="toast" hidden></div>
+<div id="print-root" class="print-root"></div>
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/tesseract/tesseract.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/util.js"></script>
+<script src="js/local-only.js"></script>
+<script src="js/db.js"></script>
+<script src="js/views.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/backup.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/receipt.js"></script>
+<script src="js/thinking.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/scan.js"></script>
+<script src="js/clean.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

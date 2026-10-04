@@ -99,12 +99,20 @@ const TTS = {
   set voice(v) { IMPrefs.set('ttsvoice', v); },
   enabled() { return this.voice !== 'device' && navigator.onLine !== false && Date.now() - this.down > 60000; },
   /* text (<= 600 chars) -> Blob (audio/mpeg) or throws */
-  async fetch(text) {
+  cache: new Map(),   // recent phrases ("Still there?", "Sent to Dave.") play instantly the second time
+  fetch(text) {
+    const k = this.voice + '|' + text; if (this.cache.has(k)) { const p = this.cache.get(k); this.cache.delete(k); this.cache.set(k, p); return p; }
+    const p = this._fetch(text); this.cache.set(k, p); p.catch(() => this.cache.delete(k));
+    while (this.cache.size > 40) this.cache.delete(this.cache.keys().next().value);
+    return p;
+  },
+  prefetch(text) { if (this.enabled() && text) this.fetch(text).catch(() => { }); },
+  async _fetch(text) {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
     try {
       const r = await fetch(IM_TTS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-im-app': IM_SEND_APP }, body: JSON.stringify({ text: text.slice(0, 600), voice: this.voice }), signal: ctl.signal });
       if (!r.ok || !/audio/.test(r.headers.get('content-type') || '')) throw new Error('tts ' + r.status);
-      return await r.blob();
+      const b = await r.blob(); b.ttsChars = text.length; return b;
     } catch (e) { this.down = Date.now(); throw e; } finally { clearTimeout(t); }
   },
 };

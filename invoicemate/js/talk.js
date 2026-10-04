@@ -9,13 +9,30 @@
 const Talk = {
   on: false, c: null, rec: null, gen: 0, phase: 'off', inv: null, entry: null,
   turn: { done: '', session: '' }, lastHeard: 0, recStarted: 0, quickEnds: 0, tick: null,
-  JOB_PAUSE_MS: 2600, ANSWER_PAUSE_MS: 1500, INTERIM_EXTRA_MS: 1400, SILENCE_MS: 14000, JOB_SILENCE_MS: 20000, ECHO_GAP_MS: 350,
+  // end-of-turn pauses (trimmed Oct 2026 from 2600 / 1500 / 1400 / 350 ms). A turn that ends on an unfinished word
+  // ("and", "um", "plus", "at"...) gets UNFINISHED_EXTRA_MS more, so thinking pauses mid-sentence still don't cut him off.
+  JOB_PAUSE_MS: 1800, ANSWER_PAUSE_MS: 900, INTERIM_EXTRA_MS: 700, UNFINISHED_EXTRA_MS: 1400, SILENCE_MS: 14000, JOB_SILENCE_MS: 20000, ECHO_GAP_MS: 200,
+  SPEC_MS: 450,       // after this much quiet, work out the reply in the background (thrown away if he keeps talking)
+  SRClass: null,      // the Voice test screen swaps in a scripted recogniser
+  bench: null,        // Voice test: { noSave: true } -> nothing is saved or sent
+  /* a job description with no charge in it yet ("Invoice for Mick Jones...") is almost certainly not finished */
+  noCharges(text) { try { return !IMConvo.command(text, this.c.ctx) && !IMParser.parseJob(text, this.c.ctx).items.length; } catch (e) { return false; } },
+  unfinished(text) { return /(?:\b(?:and|um+|uh+|er+|erm|ah+|plus|with|also|the|a|an|at|for|of|to|so|then|like|but|or|is|was|were|dot|underscore|dash|no wait|um and)|,)\s*$/i.test(String(text || '').trim()); },
 
-  supported() { return !!(window.SpeechRecognition || window.webkitSpeechRecognition); },
+  ctx() {
+    const x = Object.assign(Thinking.context(), { owed: Chase.owedList(), today: today() });
+    if (this.bench) Object.assign(x, { customers: [], owed: [], prices: IMParser.DEFAULT_PRICES, gstRate: 0.1 });   // Voice test: same start every time
+    return x;
+  },
+  supported() { return !!(this.SRClass || window.SpeechRecognition || window.webkitSpeechRecognition); },
+  engine() { return typeof Engines !== 'undefined' ? Engines.current : 'local'; },
   start(prefill = '') {
+    if (this.engine() === 'live' && typeof Live !== 'undefined' && Live.supported()) return Live.start(prefill);
     if (!this.supported()) return false;
     Voice.stopSpeaking(); Voice.unlock();
-    this.on = true; this.inv = null; this.entry = null; this.c = IMConvo.create(Object.assign(Thinking.context(), { owed: Chase.owedList(), today: today() }), { prefill });
+    this.on = true; this.inv = null; this.entry = null; this.brain = this.engine() === 'chained' ? Chained : null;
+    if (typeof VoiceMetrics !== 'undefined') VoiceMetrics.begin(this.brain ? 'chained' : 'local');
+    this.c = IMConvo.create(this.ctx(), { prefill });
     if (prefill) this.c.history.push({ who: 'you', text: prefill });
     this.ui(true); Sender.available();          // warm up the send check while he talks
     this.listen();
@@ -23,6 +40,7 @@ const Talk = {
     return true;
   },
   stop(reason = 'tap') {
+    if (typeof Live !== 'undefined' && Live.on) { Live.stop(reason); return; }
     if (!this.on) return;
     this.on = false; this.phase = 'off'; clearInterval(this.tick); this.stopRec(); Voice.stopSpeaking();
     if (reason === 'tap' && this.c && this.c.state !== 'done') this.c.history.push({ who: 'app', text: 'Stopped. Tap the mic to start again.' });
@@ -49,7 +67,7 @@ const Talk = {
     this.spawn(); this.render();
   },
   spawn() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition; const g = ++this.gen;
+    const SR = this.SRClass || window.SpeechRecognition || window.webkitSpeechRecognition; const g = ++this.gen;
     const r = new SR(); this.rec = r; r.lang = 'en-AU'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
     let finals = '';
     r.onresult = e => {
@@ -90,9 +108,20 @@ const Talk = {
     const now = Date.now(), quiet = now - this.lastHeard, text = this.turnText();
     const job = this.c.state === 'job';
     if (text) {
-      const pause = (job ? this.JOB_PAUSE_MS : this.ANSWER_PAUSE_MS) + (this.interim ? this.INTERIM_EXTRA_MS : 0);
-      if (quiet >= pause) { this.stopRec(); this.feed({ type: 'heard', text }); }
+      const pause = (job ? this.JOB_PAUSE_MS : this.ANSWER_PAUSE_MS) + (this.interim ? this.INTERIM_EXTRA_MS : 0) + (this.unfinished(text) || (job && this.noCharges(text)) ? this.UNFINISHED_EXTRA_MS : 0);
+      if (quiet >= this.SPEC_MS && quiet < pause && this.specText !== text) this.speculate(text);
+      if (quiet >= pause) { this.stopRec(); if (typeof VoiceMetrics !== 'undefined') VoiceMetrics.userEnd(this.lastHeard); this.feed({ type: 'heard', text }); }
     } else if (quiet >= (job && !this.c.history.length ? this.JOB_SILENCE_MS : this.SILENCE_MS)) { this.stopRec(); this.feed({ type: 'silence' }); }
+  },
+
+  /* the reply to `text` if the turn ended now: prefetch its voice (and for Chained, the model call) so it's instant */
+  speculate(text) {
+    this.specText = text;
+    try {
+      if (this.brain) { this.brain.speculate(this.c, text); return; }
+      const cl = structuredClone(this.c), r = IMConvo.step(cl, { type: 'heard', text });
+      if (r.say && typeof TTS !== 'undefined' && TTS.enabled()) TTS.prefetch(Voice.firstSplit(r.say)[0]);
+    } catch (e) { /* only an optimisation */ }
   },
 
   /* ---------- talking + doing ---------- */
@@ -101,9 +130,12 @@ const Talk = {
     await Voice.speakLong(text, () => !this.on);
     await new Promise(r => setTimeout(r, this.ECHO_GAP_MS));
   },
-  feed(ev) {
+  async feed(ev) {
     if (!this.on) return;
-    this.phase = 'thinking'; const r = IMConvo.step(this.c, ev); this.render(); return this.run(r);
+    this.phase = 'thinking'; this.render();
+    const r = this.brain ? await this.brain.step(this.c, ev) : IMConvo.step(this.c, ev);
+    if (!this.on) return;
+    this.render(); return this.run(r);
   },
   async run(r) {
     if (r.say) await this.say(r.say);
@@ -116,21 +148,27 @@ const Talk = {
   },
   async save() {
     const d = this.c.draft;
+    if (this.bench && this.bench.noSave) { this.inv = this.inv || { id: 'bench', number: 'BENCH' }; return this.inv; }   // Voice test: nothing is saved
     if (!this.inv) this.inv = await IM.saveDraft({ name: d.customer.name, address: d.customer.address || '', email: d.customer.email || '' }, d.items, d.workDone || '', d, this.c.heard.join(' / '));
     else { const cu = byId('customers', this.inv.customerId); if (cu && d.customer.email && cu.email !== d.customer.email && !cu.email) { cu.email = d.customer.email; await save('customers', cu); } }
     $('#im-text').value = ''; $('#im-go').disabled = true;
     return this.inv;
   },
-  async send() {
-    this.phase = 'sending'; this.render();
-    let ev;
+  /* save + send the draft in c (shared with the Live engine). -> {type:'sent', ok, to | error | unavailable} */
+  async deliver() {
+    const d = this.c.draft;
+    if (this.bench && this.bench.noSave) return { type: 'sent', ok: true, to: d.customer.email, bench: true };
     try {
-      const inv = await this.save(), d = this.c.draft;
+      const inv = await this.save();
       if (!this.entry) this.entry = S.outbox.find(x => x.invoiceId === inv.id && x.type === 'invoice' && x.status !== 'sent') || { type: 'invoice', invoiceId: inv.id, customerId: inv.customerId, status: 'queued', scheduledDate: today(), createdAt: new Date().toISOString() };
       this.entry.to = d.customer.email;
-      if (!(await Sender.available(true))) ev = { type: 'sent', ok: false, unavailable: true };
-      else { const res = await sendEntryNow(this.entry, composeEmail(this.entry)); this.lastSend = res; ev = { type: 'sent', ok: true, to: d.customer.email }; renderNav(); }
-    } catch (e) { ev = { type: 'sent', ok: false, error: e.message || String(e) }; }
+      if (!(await Sender.available(true))) return { type: 'sent', ok: false, unavailable: true };
+      const res = await sendEntryNow(this.entry, composeEmail(this.entry)); this.lastSend = res; renderNav(); return { type: 'sent', ok: true, to: d.customer.email };
+    } catch (e) { return { type: 'sent', ok: false, error: e.message || String(e) }; }
+  },
+  async send() {
+    this.phase = 'sending'; this.render();
+    const ev = await this.deliver();
     if (!this.on) return;
     const p = this.feed(ev);
     if (ev.unavailable) { await p; openCompose(this.entry); }

@@ -72,6 +72,7 @@ const Voice = {
       const u = new SpeechSynthesisUtterance(text); u.lang = 'en-AU'; const v = this.voice(); if (v) u.voice = v; u.rate = 1.03;
       const t = setTimeout(res, Math.max(8000, text.length * 120));
       u.onend = u.onerror = () => { clearTimeout(t); res(); };
+      u.onstart = () => { if (typeof VoiceMetrics !== 'undefined') VoiceMetrics.audioStart(); };
       speechSynthesis.speak(u);
     });
   },
@@ -90,10 +91,21 @@ const Voice = {
     for (const p of parts) { if ((cur + p).length > max && cur) { out.push(cur.trim()); cur = ''; } cur += p; }
     if (cur.trim()) out.push(cur.trim()); return out;
   },
+  /* first sentence on its own (it's ready to play sooner), the rest in <=560-char chunks */
+  firstSplit(text) {
+    const s = String(text || '').trim(); if (s.length < 60) return this.chunks(s, 560);
+    let m = s.match(/^.{8,200}?[.!?](?=\s+\S)/);
+    if (!m || m[0].length > 70) { const k = s.match(/^.{20,70}?,(?=\s+\S)/); if (k) m = k; }
+    if (!m) return this.chunks(s, 560);
+    return [m[0].trim(), ...this.chunks(s.slice(m[0].length).trim(), 560)];
+  },
   playBlob(blob) {
     return new Promise(res => {
       const a = this.audio || (this.audio = new Audio()); const url = URL.createObjectURL(blob); let done = false;
-      const fin = ok => { if (done) return; done = true; this._audioDone = null; clearTimeout(t); a.onended = a.onerror = null; URL.revokeObjectURL(url); res(ok); };
+      a.onplaying = () => { a.onplaying = null; if (typeof VoiceMetrics !== 'undefined') VoiceMetrics.audioStart(); };
+      const fin = ok => { if (done) return; done = true; this._audioDone = null; clearTimeout(t); a.onended = a.onerror = a.onplaying = null;
+        if (typeof VoiceMetrics !== 'undefined' && blob.ttsChars && !blob.counted) blob.counted = true, VoiceMetrics.add('tts', { chars: blob.ttsChars, seconds: isFinite(a.duration) ? a.duration : blob.ttsChars / 15 });
+        URL.revokeObjectURL(url); res(ok); };
       const t = setTimeout(() => fin(true), 60000); this._audioDone = () => fin(true);
       a.onended = () => fin(true); a.onerror = () => fin(false);
       a.src = url; const p = a.play(); if (p && p.catch) p.catch(() => fin(false));
@@ -104,10 +116,9 @@ const Voice = {
   async speakLong(text, cancelled = () => false) {
     const useTTS = typeof TTS !== 'undefined' && TTS.enabled();
     if (useTTS) {
-      const parts = this.chunks(text, 560); let next = TTS.fetch(parts[0]).catch(() => null); let ok = true;
+      const parts = this.firstSplit(text); const pending = parts.map(p => TTS.fetch(p).catch(() => null)); let ok = true;   // all bits start loading at once; the short first sentence is ready first
       for (let i = 0; i < parts.length; i++) {
-        const blob = await next; if (cancelled()) return;
-        next = i + 1 < parts.length ? TTS.fetch(parts[i + 1]).catch(() => null) : null;   // fetch the next bit while this one plays
+        const blob = await pending[i]; if (cancelled()) return;
         if (!blob || !(await this.playBlob(blob))) { ok = false; text = parts.slice(i).join(' '); break; }
         if (cancelled()) return;
       }

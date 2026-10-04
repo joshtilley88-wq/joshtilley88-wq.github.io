@@ -140,6 +140,10 @@
       for (const it of add) { it.gst = !d.noGst; items.push(it); }
       return 'added ' + add.map(it => it.qty !== 1 && it.unit !== 'hour' ? `${sayNum(it.qty)} ${plural(lc(it.desc))}` : lc(it.desc)).join(' and ');
     }
+    // "make it three smoke alarms", "it should be 4 tap washers"
+    if ((m = P.wordsToNumbers(t).match(/^(?:make it|make that|make them|it's|it should be|should be|change it to|there were|there was|it was|that was)\s+(\d+(?:\.\d+)?)\s+(?!hours?\b)(.+)$/))) {
+      const i = findItem(items, m[2], prices); if (i >= 0 && items[i].unit !== 'hour') { items[i].qty = +m[1]; return `${sayNum(+m[1])} ${+m[1] === 1 ? lc(items[i].desc) : plural(lc(items[i].desc))}`; }
+    }
     if ((m = t.match(/^(?:it was|that was|make it|it's|labour was|labour is)?\s*(\S+(?:\s+\S+)?)\s+hours?(?: of labou?r)?$/))) {
       const li = items.findIndex(it => it.unit === 'hour'); const v = P.wordsToNumbers(m[1] + ' hours').match(/(\d+(?:\.\d+)?)\s*hours/); if (li >= 0 && v) { items[li].qty = +v[1]; return `labour ${sayNum(+v[1])} hours`; }
     }
@@ -235,6 +239,12 @@
     const retry = msg => { c.tries++; if (c.tries >= 3 && q.field !== 'name') { if (q.field === 'email') c.emailSkipped = true; if (q.field === 'amount') c.checked['amt' + q.idx] = true; if (q.field === 'hours') c.checked.hours = true; return advance(c, 'No worries, let’s keep going.'); } return out(c, msg); };
     // a correction instead of an answer ("actually take off the call-out")
     if (q.field !== 'name' && q.field !== 'email' && /^(?:actually\s+)?(?:take off|remove|change|add|make)\b/.test(t)) { const ch = applyCorrection(d, text, c.ctx); if (ch) return advance(c, `Okay, ${ch}.`); }
+    // the rest of the job, said after a pause ("and, uh, parts were eighty five dollars")
+    const tail = t.replace(/^(?:(?:um+|uh+|ah+|oh|yeah)[\s,.]+)+/, '');
+    if (q.field !== 'name' && /^(?:and|plus|also)\b/.test(tail) && !/@|\bat\b.*\bdot\b/.test(tail)) {
+      const nd = P.parseJob('job ' + tail.replace(/^(?:and|plus|also)[\s,]+(?:(?:um+|uh+|ah+)[\s,]+)*/, ''), c.ctx || {}); const add = nd.items.filter(it => it && (+it.price > 0 || it.unit === 'hour'));
+      if (add.length) { for (const it of add) { it.gst = !d.noGst; d.items.push(it); } return advance(c, 'Okay, added ' + add.map(it => lc(it.desc)).join(' and ') + '.'); }
+    }
     if (q.field === 'name') {
       const n = text.replace(/^(?:(?:it'?s|its|it is|that'?s|for|the customer is|customer is|name is|um+|uh+|yeah|oh)[\s,]+)+/i, '').replace(/[.!?,]/g, '').trim();
       if (!n || n.split(/\s+/).length > 4) return retry('Sorry, who’s it for? Just say their name.');
@@ -326,6 +336,6 @@
     return out(c, '');
   }
 
-  const api = { command, findOwed, overdueWords, create, step, spokenEmail, extractSpokenEmail, applyCorrection, yesNo, isStop, summary, sayEmail, sayMoney, sayNum, nextQuestion };
+  const api = { command, findOwed, overdueWords, findItem, create, out, step, spokenEmail, extractSpokenEmail, applyCorrection, yesNo, isStop, summary, sayEmail, sayMoney, sayNum, nextQuestion };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.IMConvo = api;
 })(typeof self !== 'undefined' ? self : this);

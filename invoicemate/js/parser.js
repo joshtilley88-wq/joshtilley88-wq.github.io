@@ -52,6 +52,7 @@
   function wordsToNumbers(text) {
     let t = ' ' + String(text || '') + ' ';
     t = t.replace(/[\u2018\u2019]/g, "'").replace(/\b(\d+)\s*k\b/gi, (m, n) => String(+n * 1000));
+    t = t.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)-(one|two|three|four|five|six|seven|eight|nine)\b/gi, '$1 $2');   // eighty-five
     // fractions & idioms first
     t = t.replace(/\b(a|one)\s+and\s+a\s+half\s+hours?\b/gi, '1.5 hours')
       .replace(/\ban?\s+hour\s+and\s+a\s+half\b/gi, '1.5 hours')
@@ -127,6 +128,8 @@
     const gstRate = opts.gstRate ?? 0.1;
     const original = String(text || '').trim();
     let t = wordsToNumbers(original).replace(/\s+/g, ' ');
+    // mid-sentence corrections: "two hours, no wait, three hours" -> "three hours"
+    t = t.replace(/\b\d+(?:\.\d+)?(\s+[a-z]+)?\s*,?\s*(?:no,?\s+wait|no,?\s+sorry|sorry|i mean|or rather|actually|nah)\s*,?\s+(\d+(?:\.\d+)?)(\s+[a-z]+)?/gi, (m, u1, n2, u2) => n2 + (u2 || u1 || ''));
     const warnings = [];
     const draft = { customer: { name: '', address: '', email: '', id: '', isNew: false }, items: [], workDone: '', notes: '', dueDays: null, gstIncluded: false, noGst: false, raw: original, normalised: t };
     const priceOf = key => prices.find(p => p.key === key) || DEFAULT_PRICES.find(p => p.key === key);
@@ -268,6 +271,6 @@
     return { subtotal: sub, gst, total: r2(sub + gst) };
   }
 
-  const api = { parseJob, wordsToNumbers, totals, DEFAULT_PRICES };
+  const api = { parseJob, wordsToNumbers, totals, matchPrice, DEFAULT_PRICES };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.IMParser = api;
 })(typeof self !== 'undefined' ? self : this);

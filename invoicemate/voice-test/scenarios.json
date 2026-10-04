@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "voice": "ash",
+  "note": "User lines spoken once with gpt-4o-mini-tts (voice ash) and cached here as mp3. gapMs = silence after a segment (thinking pauses).",
+  "generic": {
+    "price_unknown": [{ "text": "No charge for that one, just take it off." }],
+    "nothing_else": [{ "text": "Nah, that's everything." }]
+  },
+  "scenarios": [
+    { "id": "s1-simple", "title": "Simple: Dave, hot water service, 3 h labour + call-out",
+      "clips": {
+        "job": [{ "text": "Invoice for Dave at 12 Smith Street. Replaced the hot water service, three hours labour plus a call-out." }],
+        "email": [{ "text": "It's dave at gmail dot com." }],
+        "yes": [{ "text": "Yep, send it." }] },
+      "flow": { "email": ["email"], "confirm": ["yes"] },
+      "expect": { "customer": "Dave", "email": "dave@gmail.com", "items": [{ "match": "hot water", "qty": 1, "price": 1450 }, { "match": "labou?r", "qty": 3, "price": 95 }, { "match": "call", "qty": 1, "price": 80 }], "total": 1996.5 } },
+    { "id": "s2-messy", "title": "Messy: pauses, um/ah, “two hours, no wait, three”",
+      "clips": {
+        "job": [{ "text": "Um, invoice for... Mick Jones.", "gapMs": 1300 }, { "text": "Ah, he's at 5 Beach Road. Fixed a burst pipe, um,", "gapMs": 1200 }, { "text": "labour was two hours, no wait, three hours,", "gapMs": 1100 }, { "text": "and, ah, parts were eighty five dollars." }],
+        "email": [{ "text": "Mick dot jones at gmail dot com." }],
+        "yes": [{ "text": "Yeah, go ahead." }] },
+      "flow": { "email": ["email"], "confirm": ["yes"] },
+      "expect": { "customer": "Mick", "email": "mick.jones@gmail.com", "items": [{ "match": "labou?r", "qty": 3, "price": 95 }, { "match": "part", "qty": 1, "price": 85 }], "total": 407 } },
+    { "id": "s3-multi", "title": "Multi-item: tap washers x4, 2 smoke alarms, labour, parts $120",
+      "clips": {
+        "job": [{ "text": "Job for Sharon Smith. Four tap washers, two smoke alarms, two hours labour, and parts were a hundred and twenty bucks." }],
+        "email": [{ "text": "sharon at outlook dot com" }],
+        "yes": [{ "text": "Yes please." }] },
+      "flow": { "email": ["email"], "confirm": ["yes"] },
+      "expect": { "customer": "Sharon", "email": "sharon@outlook.com", "items": [{ "match": "tap washer", "qty": 4, "price": 15 }, { "match": "smoke", "qty": 2, "price": 65 }, { "match": "labou?r", "qty": 2, "price": 95 }, { "match": "part", "qty": 1, "price": 120 }], "total": 550 } },
+    { "id": "s4-email", "title": "Missing email, spelled out when asked",
+      "clips": {
+        "job": [{ "text": "Invoice for Davo Brown, one hour labour and a call-out." }],
+        "email": [{ "text": "D, A, V, O, underscore, eight eight, at bigpond dot com." }],
+        "yes": [{ "text": "Send it." }] },
+      "flow": { "email": ["email"], "confirm": ["yes"] },
+      "expect": { "customer": "Davo", "email": "davo_88@bigpond.com", "items": [{ "match": "labou?r", "qty": 1, "price": 95 }, { "match": "call", "qty": 1, "price": 80 }], "total": 192.5 } },
+    { "id": "s5-fix", "title": "Correction after the read-back",
+      "clips": {
+        "job": [{ "text": "Invoice for Tom Baker, two smoke alarms and one hour labour. His email is tom at gmail dot com." }],
+        "fix": [{ "text": "Actually, make it three smoke alarms." }],
+        "yes": [{ "text": "Yep, that's right, send it." }] },
+      "flow": { "email": [], "confirm": ["fix", "yes"] },
+      "expect": { "customer": "Tom", "email": "tom@gmail.com", "items": [{ "match": "smoke", "qty": 3, "price": 65 }, { "match": "labou?r", "qty": 1, "price": 95 }], "total": 319 } }
+  ]
+}

@@ -21,6 +21,12 @@ A voice-first invoicing app for Australian tradies. It's a plain HTML/CSS/vanill
 | `js/thinking.js` | **Provider switch** (Settings → Voice & prices → Thinking: Local / Grok / OpenAI; only Local is implemented, the other two are stubs). Price list in localStorage (`im.prices`) and its editor |
 | `js/convo.js` | **Conversation state machine** (pure, Node-testable): spoken emails, yes/no, corrections, missing-detail questions, summary |
 | `js/talk.js` | Conversation controller: recognition (restart, end-of-turn pause, silence), mic paused while speaking, transcript + draft UI, save + send |
+| `js/engines.js` | **Conversation engine switch** (Settings → Voice & prices → Conversation engine: Live / Chained / Local) and engine B, `Chained` (calls `invoicemate-brain`, applies its ops, guards sending) |
+| `js/live.js` | Engine A, `Live`: OpenAI Realtime over WebRTC (ephemeral key from `invoicemate-realtime-session`), tool calls → draft, barge-in |
+| `js/voice-prompt.js` | The ONE system prompt + tool list shared by Live and Chained (copied into `supabase/functions/_shared/` on deploy) |
+| `js/draft-ops.js` | The tools' effect on the draft (set_customer, add_item, update_item, remove_item, set_email), draft state for the model, grading |
+| `js/voice-cost.js` | Turn latency metrics + OpenAI pricing for the cost-per-invoice numbers |
+| `js/voicetest.js`, `voice-test/` | **Voice test** screen (menu → Voice test): scripted scenarios with recorded clips, runs any engine, shows the metrics table. `voice-test/results.json` = latest headless benchmark |
 | `js/send.js` | `Sender` (calls the `invoicemate-send` function), email-safe invoice HTML, `sendEntryNow()`, `TTS` (calls `invoicemate-tts`) + voice list |
 | `supabase/functions/invoicemate-send/` | Edge Function: `{to, subject, html, text, reply_to?, attachments?}` → Resend. Test mode forces delivery to Josh |
 | `supabase/functions/invoicemate-tts/` | Edge Function: `{text, voice?}` → OpenAI `gpt-4o-mini-tts` mp3 (≤ 600 chars) |
@@ -43,7 +49,7 @@ Everything stays in the browser on the device. Invoices, customers, expenses and
 ```
 cd /workspace/invoicemate && python3 -m http.server 8792 --bind 127.0.0.1    # then open http://localhost:8792/
 cd tests && npm install          # dev only: playwright-core, tesseract.js (source of the vendored files)
-node parser.test.js && node receipt.test.js && node convo.test.js && node e2e.js 8792   # e2e mocks both functions + speech
+node parser.test.js && node receipt.test.js && node convo.test.js && node chase.test.js && node voice.test.js && node e2e.js 8792   # e2e mocks both functions + speech
 ```
 
 ## Known limits
@@ -65,6 +71,21 @@ supabase functions deploy invoicemate-send --project-ref opekqrldytqvjziowbqo --
 supabase functions deploy invoicemate-tts  --project-ref opekqrldytqvjziowbqo --no-verify-jwt
 ```
 `--no-verify-jwt` is used because the app has no Supabase sign-in. Each function checks the `x-im-app` header and the Origin (https://joshtilley88-wq.github.io or localhost) itself. GET with the header is a health check, which the app uses to decide whether to show **Send now**.
+
+## Conversation engines (voice)
+Settings → Voice & prices → **Conversation engine**. All three make the same draft and save/send it the same way; the app (not the AI) decides when it's really sent: only after a clear yes, and only when nothing is missing.
+
+| Engine | How | Notes |
+|---|---|---|
+| **Live (Realtime)** | Mic → OpenAI `gpt-realtime-2.1-mini` speech-to-speech over WebRTC. `invoicemate-realtime-session` mints a 60 s client secret (key stays on the server). Semantic VAD (eagerness medium, switched to high just for "want me to send it?"), noise reduction near-field, barge-in on. The model fills the invoice through tools; the app applies them (`js/draft-ops.js`) and does the send. | Most natural, talks over you / you can interrupt. ~2–3 US cents per invoice. Needs good data. |
+| **Chained (cheap)** | Phone's free Web Speech → `invoicemate-brain` (`gpt-4.1-mini`, JSON: draft ops + reply) → `invoicemate-tts` voice. The model call starts during his pause (speculative), and the first sentence of the reply is voiced first. | ~1 US cent per invoice. Best accuracy on messy speech in the tests. |
+| **Local (offline)** | The rule-based parser + state machine (`js/convo.js`). | Free, quickest replies, weakest on messy speech. |
+
+**Delay trims (Oct 2026), Chained + Local:** end-of-turn silence 2.6 s → 1.8 s for the job description and 1.5 s → 0.9 s for answers; +1.4 s automatically when the words so far look unfinished ("and", "um", "plus", "at", "dot", a trailing comma) or the job has no charge in it yet; interim-word grace 1.4 → 0.7 s; echo gap 350 → 200 ms. While he's pausing (after 0.45 s) the reply is worked out in the background and its first sentence's voice prefetched, so when the pause ends it starts almost at once (thrown away if he keeps talking). Long replies are split so the first sentence (or first clause) is voiced while the rest loads. TTS phrases are cached (40).
+
+**Voice test** (menu → Voice test): runs scripted scenarios (simple, messy with pauses and "no wait", multi-item, spoken email, correction after read-back) through any engine with recorded clips (`voice-test/*.mp3`, made once with gpt-4o-mini-tts) and shows cost per invoice (from the APIs' usage), reply delay (end of speech → first reply audio, avg and p90) and accuracy against the expected invoice. Headless benchmark: `node tests/voice-bench.js 8792 live,chained,local s1-simple,s2-messy 1` then `node tests/voice-merge.js <live files> <chained/local files>`. In the headless browser there's no Web Speech, so `gpt-4o-mini-transcribe` stands in for Chained/Local (left out of "cost per invoice"; on the phone it's free).
+
+Deploy the two voice functions: `bash supabase/deploy-voice.sh` (copies the shared prompt, deploys `invoicemate-realtime-session` + `invoicemate-brain`; OPENAI_API_KEY is already a function secret).
 
 ## Automatic payment chasing
 

@@ -45,6 +45,10 @@ const IMSettings = {
     const prices = IMPrices.load(); const cur = Thinking.provider;
     body.innerHTML = `<div class="grid g2" style="align-items:start">
       <div class="stack">
+        <div class="card"><h2 style="margin-bottom:6px">Conversation engine</h2><p class="small muted" style="margin-top:0">Who you talk to in hands-free mode. All three make the same invoice and only send when you say yes.</p>
+          <div class="list">${Engines.LIST.map(([k, l, n]) => `<label class="li" style="cursor:pointer"><input type="radio" name="im-engine" value="${k}" ${k === Engines.current ? 'checked' : ''}>
+            <div class="grow"><div class="t">${esc(l)}</div><div class="s" style="white-space:normal">${esc(n)}</div></div></label>`).join('')}</div>
+          <div class="row" style="margin-top:10px"><a class="btn sm" href="#/voicetest">${icon('mic')} Voice test</a><span class="small muted">Compare the engines: speed, cost, accuracy.</span></div></div>
         <div class="card"><h2 style="margin-bottom:6px">Thinking</h2><p class="small muted" style="margin-top:0">What turns your words into an invoice.</p>
           <div class="list">${Object.entries(Thinking.providers).map(([k, p]) => `<label class="li" style="cursor:pointer"><input type="radio" name="im-think" value="${k}" ${k === cur ? 'checked' : ''}>
             <div class="grow"><div class="t">${esc(p.label)} ${p.ready ? '' : '<span class="pill">stub</span>'}</div><div class="s" style="white-space:normal">${esc(p.note)}</div></div></label>`).join('')}</div></div>
@@ -61,6 +65,7 @@ const IMSettings = {
         <div id="pl-rows" class="stack">${prices.map((p, i) => this.row(p, i)).join('')}</div>
         <div class="row" style="margin-top:16px"><button class="btn pri" id="pl-save">${icon('check')} Save price list</button><button class="btn ghost" id="pl-reset">Reset to defaults</button></div></div>
     </div>`;
+    $$('input[name=im-engine]', body).forEach(r => r.onchange = () => { Engines.current = r.value; toast('Conversation engine: ' + Engines.label(r.value)); });
     $$('input[name=im-think]', body).forEach(r => r.onchange = () => { Thinking.provider = r.value; toast(Thinking.providers[r.value].ready ? 'Thinking: ' + Thinking.providers[r.value].label : Thinking.providers[r.value].label + ' is a stub. Local will be used until it is set up.'); });
     $('#im-tts', body).onchange = e => { TTS.voice = e.target.value; TTS.down = 0; };
     $('#im-tts-try', body).onclick = async () => { const n = $('#im-tts-note', body); Voice.unlock(); TTS.down = 0; n.textContent = 'Playing…';

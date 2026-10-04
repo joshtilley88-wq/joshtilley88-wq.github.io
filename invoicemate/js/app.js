@@ -2,7 +2,7 @@
 'use strict';
 const NAV = [
   ['dashboard', 'Dashboard', 'home'], ['invoices', 'Invoices', 'file'], ['customers', 'Customers', 'users'], ['services', 'Services', 'tag'],
-  ['expenses', 'Expenses', 'receipt'], ['outbox', 'Email outbox', 'mail'], ['reminders', 'Reminders log', 'clock'], ['contracts', 'Contracts', 'pen'], ['forms', 'Questionnaires', 'clip'],
+  ['expenses', 'Expenses', 'receipt'], ['outbox', 'Email outbox', 'mail'], ['reminders', 'Reminders log', 'clock'], ['voicetest', 'Voice test', 'mic'], ['contracts', 'Contracts', 'pen'], ['forms', 'Questionnaires', 'clip'],
   ['reports', 'Reports', 'chart'], ['import', 'Import CSV', 'upload'], ['settings', 'Settings', 'sliders'],
 ];
 

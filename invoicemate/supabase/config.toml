@@ -1,0 +1,8 @@
+# Only the bits InvoiceMate needs. Project: invoicing (ref opekqrldytqvjziowbqo, Sydney).
+# The app has no Supabase sign-in, so the gateway JWT check is off for this one function;
+# the function does its own checks (shared app header, CORS allow-list, rate limit, forced test recipient).
+[functions.invoicemate-send]
+verify_jwt = false
+
+[functions.invoicemate-tts]
+verify_jwt = false

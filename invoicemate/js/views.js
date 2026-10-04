@@ -37,7 +37,7 @@ V.dashboard = async view => {
   const name = S.settings.business.name;
   view.innerHTML = `${demoBanner()}${notifyPromptHTML()}${pageH(`Hi${name ? ', ' + esc(name) : ''}`, new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), `<a class="btn pri" href="#/invoice/new">${icon('plus')} New invoice</a>`)}
   <div class="card alert-card" style="margin-bottom:18px">
-    <div class="card-h"><span class="ic">${icon('mail')}</span><div><h2>Emails to send ${due.length ? `<span class="badge ${due.some(e => e.scheduledDate < t) ? 'bad' : ''}">${due.length}</span>` : ''}</h2><div class="small muted">Due today or overdue. Open each one, send it, then mark it sent.</div></div><div class="spacer"></div><a class="btn ghost sm" href="#/outbox">View outbox</a></div>
+    <div class="card-h"><span class="ic">${icon('mail')}</span><div><h2>Emails to send ${due.length ? `<span class="badge ${due.some(e => e.scheduledDate < t) ? 'bad' : ''}">${due.length}</span>` : ''}</h2><div class="small muted">Due today or overdue. Open one and tap Send now.</div></div><div class="spacer"></div><a class="btn ghost sm" href="#/outbox">View outbox</a></div>
     ${due.length ? due.map(e => outboxRow(e)).join('') : `<div class="empty" style="padding:14px">${icon('check')} All caught up. Nothing due today.</div>`}
     ${soon.length ? `<div class="small muted" style="margin:14px 0 8px;font-weight:600">Coming up in the next 7 days</div>${soon.map(e => outboxRow(e, true)).join('')}` : ''}
   </div>
@@ -471,7 +471,7 @@ V.outbox = async (view, _, q) => {
   const tab = q.get('t') || 'todo';
   const act = outboxActive(), sent = S.outbox.filter(e => e.status === 'sent').sort((a, b) => (b.sentAt || '').localeCompare(a.sentAt || ''));
   const due = act.filter(e => e.scheduledDate <= today()), later = act.filter(e => e.scheduledDate > today());
-  view.innerHTML = `${pageH('Email outbox', 'Scheduled emails. This site can\'t send email by itself, so each one opens ready to send in your email app.')}
+  view.innerHTML = `${pageH('Email outbox', 'Scheduled emails. Open one and tap Send now to email it straight from InvoiceMate (or send it from your own email app).')}
   <div class="tabs"><button data-t="todo" class="${tab === 'todo' ? 'on' : ''}">To send (${act.length})</button><button data-t="sent" class="${tab === 'sent' ? 'on' : ''}">Sent (${sent.length})</button><button data-t="tpl" class="${tab === 'tpl' ? 'on' : ''}">Templates</button></div>
   <div id="ob-body"></div>`;
   $$('.tabs button', view).forEach(b => b.onclick = () => go('outbox?t=' + b.dataset.t));

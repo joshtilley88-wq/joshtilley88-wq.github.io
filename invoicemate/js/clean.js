@@ -76,6 +76,7 @@ const IM = {
     const ta = $('#im-text'), mic = $('#im-mic'), go = $('#im-go'), st = $('#im-status');
     const upd = () => { go.disabled = !ta.value.trim(); };
     ta.addEventListener('input', () => { if (Voice.want) Voice.stop(); upd(); });
+    ta.addEventListener('focus', () => { if (!Talk.on && $('#clean').classList.contains('convo')) Talk.close(); });
     upd();
     const MSG = { listening: 'Listening… take your time, pauses are fine. Tap the mic when you’re done.', pause: 'Still listening…', stopped: '', denied: 'Microphone blocked. Allow the mic for this site in Chrome settings, or just type.',
       network: 'Talking needs an internet connection (Chrome does the speech-to-text). You can still type.', nomic: 'No microphone found. You can type instead.', unsupported: 'Talking isn’t supported in this browser. Use Chrome on Android, or type.' };
@@ -83,13 +84,17 @@ const IM = {
       const on = s === 'listening' || s === 'pause'; mic.classList.toggle('live', on); mic.setAttribute('aria-pressed', on); mic.setAttribute('aria-label', on ? 'Stop talking' : 'Start talking');
       st.textContent = MSG[s] ?? ''; if (s === 'stopped') { st.textContent = ta.value.trim() ? 'Got it. Check the words, then tap Make invoice.' : 'Didn’t catch anything. Tap the mic and try again.'; }
     };
+    // one tap starts a hands-free conversation (js/talk.js); another tap ends it
     mic.onclick = () => {
       if (Voice.want) { Voice.stop(); return; }
-      if (!Voice.start(ta.value, t => { ta.value = t; upd(); ta.scrollTop = ta.scrollHeight; }, setState)) setState('unsupported');
+      if (Talk.on) { Talk.stop('tap'); return; }
+      const pre = ta.value.trim(); ta.value = ''; upd();
+      if (!Talk.start(pre)) { ta.value = pre; upd(); setState('unsupported'); }
     };
+    $('#im-type').onclick = () => { if (Talk.on) Talk.stop('tap'); Talk.close(); st.textContent = 'Type the job, then tap Make invoice.'; setTimeout(() => ta.focus(), 50); };
     go.onclick = () => { if (Voice.want) Voice.stop(); this.submit(ta.value); };
     ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) go.click(); });
-    st.textContent = Voice.supported ? 'Tap the mic and say the job, or type it.' : MSG.unsupported;
+    st.textContent = Voice.supported ? 'Tap the mic once and just talk. I’ll ask for anything missing, then send it.' : MSG.unsupported;
   },
   async submit(text) {
     text = (text || '').trim(); if (!text) return;
@@ -155,7 +160,7 @@ const IM = {
       const lines = items.map(it => it.unit === 'hour' ? `${it.desc}, ${sayNum(it.qty)} ${it.qty === 1 ? 'hour' : 'hours'} at ${sayMoney(it.price)} an hour` : `${it.qty !== 1 ? sayNum(it.qty) + ' ' : ''}${it.desc}, ${sayMoney(r2(it.qty * it.price))}`);
       const txt = `Invoice for ${name || 'no name yet'}${addr ? ', at ' + addr.replace(/\bSt\b/g, 'Street').replace(/\bRd\b/g, 'Road').replace(/\bAve\b/g, 'Avenue') : ''}. ${lines.join('. ')}. Total ${sayMoney(t.total)}${t.gst ? ' including GST' : ''}.${IMPrefs.get('voiceconfirm', true) && Voice.supported ? ' Say yes to confirm.' : ''}`;
       const say = $('#dr-say', m); if (say) say.innerHTML = `${icon('volume')} Reading it out…`;
-      await Voice.speak(txt);
+      await Voice.speakLong(txt, () => !document.body.contains(m));
       if (!document.body.contains(m)) return;
       if (IMPrefs.get('voiceconfirm', true) && Voice.supported) {
         say.innerHTML = `${icon('mic')} Listening for “yes”, “yep” or “send it”…`; listening = true;

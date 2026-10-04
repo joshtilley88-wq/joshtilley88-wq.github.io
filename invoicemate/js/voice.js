@@ -75,6 +75,45 @@ const Voice = {
       speechSynthesis.speak(u);
     });
   },
-  stopSpeaking() { if (window.speechSynthesis) speechSynthesis.cancel(); },
+  stopSpeaking() {
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    if (this.audio) { try { this.audio.pause(); } catch (e) { } if (this._audioDone) this._audioDone(); }
+  },
+  /* call from the mic tap (a user gesture) so later audio/speech is allowed to play without another tap */
+  unlock() {
+    try { if (!this.audio) { this.audio = new Audio(); this.audio.preload = 'auto'; } } catch (e) { }
+    try { if (window.speechSynthesis && !this._unlocked) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); this._unlocked = true; } } catch (e) { }
+  },
+  /* split long text into sentence chunks (Chrome cuts off long utterances; the TTS server takes <= 600 chars) */
+  chunks(text, max = 220) {
+    const parts = String(text || '').match(/[^.!?]+[.!?]*\s*/g) || [String(text || '')]; const out = []; let cur = '';
+    for (const p of parts) { if ((cur + p).length > max && cur) { out.push(cur.trim()); cur = ''; } cur += p; }
+    if (cur.trim()) out.push(cur.trim()); return out;
+  },
+  playBlob(blob) {
+    return new Promise(res => {
+      const a = this.audio || (this.audio = new Audio()); const url = URL.createObjectURL(blob); let done = false;
+      const fin = ok => { if (done) return; done = true; this._audioDone = null; clearTimeout(t); a.onended = a.onerror = null; URL.revokeObjectURL(url); res(ok); };
+      const t = setTimeout(() => fin(true), 60000); this._audioDone = () => fin(true);
+      a.onended = () => fin(true); a.onerror = () => fin(false);
+      a.src = url; const p = a.play(); if (p && p.catch) p.catch(() => fin(false));
+    });
+  },
+  /* speak everything: natural voice from the server (TTS) when it works, else the phone's speechSynthesis.
+   * cancelled() is checked between chunks. Resolves when finished (the caller keeps the mic off until then). */
+  async speakLong(text, cancelled = () => false) {
+    const useTTS = typeof TTS !== 'undefined' && TTS.enabled();
+    if (useTTS) {
+      const parts = this.chunks(text, 560); let next = TTS.fetch(parts[0]).catch(() => null); let ok = true;
+      for (let i = 0; i < parts.length; i++) {
+        const blob = await next; if (cancelled()) return;
+        next = i + 1 < parts.length ? TTS.fetch(parts[i + 1]).catch(() => null) : null;   // fetch the next bit while this one plays
+        if (!blob || !(await this.playBlob(blob))) { ok = false; text = parts.slice(i).join(' '); break; }
+        if (cancelled()) return;
+      }
+      if (ok) return;
+    }
+    for (const part of this.chunks(text)) { if (cancelled()) return; await this.speak(part); }
+  },
 };
 if (window.speechSynthesis) speechSynthesis.onvoiceschanged = () => { };   // warms up the voice list on Chrome

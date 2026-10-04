@@ -65,3 +65,34 @@ body.im-pager #pager { position: fixed; inset: 0; overflow: hidden; touch-action
 .scan-prog { height: 10px; border-radius: 10px; background: #F0F1F3; overflow: hidden; } .scan-prog > div { height: 100%; width: 3%; background: var(--grad); transition: width .2s; }
 .scan-note svg { width: 16px; height: 16px; vertical-align: -3px; }
 @media print { body.im-pager { overflow: visible; } body.im-pager #pager, .im-dots { display: none !important; } }
+
+/* placeholder: lighter, so it reads as an example rather than typed text */
+.im-box textarea::placeholder { color: #BDC1C8; opacity: 1; }
+.im-box textarea::-webkit-input-placeholder { color: #BDC1C8; }
+
+/* hands-free conversation: transcript + live draft */
+.im-convo { display: none; width: 100%; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 10px; }
+#clean.convo .im-convo { display: flex; }
+#clean.convo .im-box { display: none; }
+#clean.convo .clean-logo { margin: 0 0 12px; font-size: 24px; } #clean.convo .clean-logo .im-logo { font-size: 24px; }
+#clean.convo .clean-wrap { padding-top: calc(18px + env(safe-area-inset-top)); padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
+#clean.convo .mic-btn { width: 84px; height: 84px; margin: 4px 0 8px; } #clean.convo .mic-btn svg { width: 38px; height: 38px; }
+#clean.convo .im-status { min-height: 22px; margin-top: 8px; }
+.im-log { flex: 1 1 auto; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px; }
+.bub { max-width: 86%; padding: 9px 13px; border-radius: 18px; font-size: 15px; line-height: 1.38; }
+.bub.app { align-self: flex-start; background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 6px; color: var(--char-d); }
+.bub.you { align-self: flex-end; background: var(--grad); color: #fff; border-bottom-right-radius: 6px; }
+.bub.you.live { opacity: .75; }
+.bub .dots { display: inline-flex; gap: 4px; } .bub .dots i { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: im-dot 1.2s infinite; } .bub .dots i:nth-child(2) { animation-delay: .2s; } .bub .dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes im-dot { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+.im-draft:empty { display: none; }
+.im-draft { flex: none; background: #fff; border: 1.5px solid var(--line); border-radius: 18px; padding: 10px 14px; box-shadow: var(--sh); max-height: 34vh; overflow-y: auto; }
+.dft-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 16px; }
+.dft-l { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; padding: 4px 0; border-bottom: 1px dashed #EEE; }
+.dft-l.tot { border: 0; font-weight: 750; font-size: 15px; padding-top: 6px; }
+.im-type { align-self: center; border: 0; background: none; color: #9AA0A8; font-size: 13px; text-decoration: underline; cursor: pointer; padding: 2px 8px; }
+#clean[data-phase=speaking] .mic-btn.live::before, #clean[data-phase=speaking] .mic-btn.live::after { animation-play-state: paused; opacity: .25; }
+/* compose: "I sent it myself" is a small text link, not a button */
+.linkish { border: 0; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; padding: 6px 4px; }
+.linkish:hover { color: var(--ink); }
+#clean.convo .im-hint { display: none; }

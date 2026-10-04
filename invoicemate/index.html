@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>InvoiceMate</title>
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; frame-src 'self' blob:; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob: https://opekqrldytqvjziowbqo.supabase.co; media-src 'self' blob:; object-src 'none'; frame-src 'self' blob:; base-uri 'self'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#2B2F36">
@@ -28,9 +28,11 @@
         <textarea id="im-text" rows="5" aria-label="Describe the job" placeholder="Say or type the job, e.g. “Invoice for Dave at 12 Smith St, replaced the hot water service, three hours labour plus call-out.”"></textarea>
         <button id="im-go" class="btn pri im-go" disabled>Make invoice <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></button>
       </div>
+      <div id="im-convo" class="im-convo" aria-live="polite"><div id="im-log" class="im-log"></div><div id="im-draft" class="im-draft"></div>
+        <button class="im-type" id="im-type" type="button">Type instead</button></div>
       <div id="im-status" class="im-status" role="status" aria-live="polite"></div>
       <button id="im-mic" class="mic-btn" aria-label="Start talking" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-      <div class="im-hint">Swipe left for invoices, customers &amp; expenses</div>
+      <div class="im-hint">Swipe left</div>
     </div>
   </section>
   <!-- 2. FULL APP SCREEN (Allyce's app layout) -->
@@ -60,7 +62,10 @@
 <script src="js/parser.js"></script>
 <script src="js/receipt.js"></script>
 <script src="js/thinking.js"></script>
+<script src="js/send.js"></script>
+<script src="js/convo.js"></script>
 <script src="js/voice.js"></script>
+<script src="js/talk.js"></script>
 <script src="js/scan.js"></script>
 <script src="js/clean.js"></script>
 <script src="js/app.js"></script>

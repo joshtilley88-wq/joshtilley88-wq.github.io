@@ -1,10 +1,10 @@
 /* InvoiceMate service worker (based on Allyce's). App shell: network-first with cache fallback, so updates show up.
  * Vendor files (Chart.js, Tesseract OCR engine + English data): cache-first, they never change. Bump C on every deploy.
  * All user data lives in IndexedDB / localStorage, never here. */
-const C = 'invoicemate-v1';
+const C = 'invoicemate-v2';
 const SHELL = ['./', './index.html', './app.css', './im.css', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/logo.svg', './icons/mark.svg',
   './fonts/inter-latin-wght.woff2', './js/config.js', './js/util.js', './js/local-only.js', './js/db.js', './js/views.js', './js/tools.js', './js/backup.js',
-  './js/parser.js', './js/receipt.js', './js/thinking.js', './js/voice.js', './js/scan.js', './js/clean.js', './js/app.js'];
+  './js/parser.js', './js/receipt.js', './js/thinking.js', './js/send.js', './js/convo.js', './js/voice.js', './js/talk.js', './js/scan.js', './js/clean.js', './js/app.js'];
 const VENDOR = ['./vendor/chart.umd.min.js', './vendor/tesseract/tesseract.min.js', './vendor/tesseract/worker.min.js', './vendor/tesseract/lang/eng.traineddata.gz',
   './vendor/tesseract/tesseract-core-relaxedsimd-lstm.wasm.js'];   // the other two core builds (simd / plain) are cached the first time a phone needs one
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(SHELL.concat(VENDOR)))); self.skipWaiting(); });

@@ -49,6 +49,9 @@ const IMSettings = {
           <div class="list">${Object.entries(Thinking.providers).map(([k, p]) => `<label class="li" style="cursor:pointer"><input type="radio" name="im-think" value="${k}" ${k === cur ? 'checked' : ''}>
             <div class="grow"><div class="t">${esc(p.label)} ${p.ready ? '' : '<span class="pill">stub</span>'}</div><div class="s" style="white-space:normal">${esc(p.note)}</div></div></label>`).join('')}</div></div>
         <div class="card"><h2 style="margin-bottom:12px">Voice</h2><div class="stack">
+          <label class="f">App’s voice<select id="im-tts">${IM_TTS_VOICES.map(([k, l]) => `<option value="${k}" ${k === TTS.voice ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+          <div class="row"><button class="btn sm" id="im-tts-try" type="button">${icon('volume')} Hear it</button><span class="small muted" id="im-tts-note"></span></div>
+          <div class="small muted">The natural voices come from OpenAI through InvoiceMate’s server and need internet. If they can’t be reached, the phone’s built-in voice is used instead.</div>
           <label class="chk"><input type="checkbox" id="im-rb" ${IMPrefs.get('readback', true) ? 'checked' : ''}> Read the draft invoice back to me</label>
           <label class="chk"><input type="checkbox" id="im-vc" ${IMPrefs.get('voiceconfirm', true) ? 'checked' : ''}> Then listen for “yes / yep / send it” to confirm</label>
           <div class="small muted">Talking uses Chrome's built-in speech recognition (Australian English). On Android it needs Chrome, an internet connection and microphone permission.</div></div></div>
@@ -59,6 +62,10 @@ const IMSettings = {
         <div class="row" style="margin-top:16px"><button class="btn pri" id="pl-save">${icon('check')} Save price list</button><button class="btn ghost" id="pl-reset">Reset to defaults</button></div></div>
     </div>`;
     $$('input[name=im-think]', body).forEach(r => r.onchange = () => { Thinking.provider = r.value; toast(Thinking.providers[r.value].ready ? 'Thinking: ' + Thinking.providers[r.value].label : Thinking.providers[r.value].label + ' is a stub. Local will be used until it is set up.'); });
+    $('#im-tts', body).onchange = e => { TTS.voice = e.target.value; TTS.down = 0; };
+    $('#im-tts-try', body).onclick = async () => { const n = $('#im-tts-note', body); Voice.unlock(); TTS.down = 0; n.textContent = 'Playing…';
+      const viaServer = TTS.enabled(); await Voice.speakLong('G’day! What’s Dave’s email address?');
+      n.textContent = TTS.voice === 'device' ? 'Phone voice' : viaServer && Date.now() - TTS.down > 60000 ? 'Natural voice' : 'Natural voice not reachable, used the phone voice'; };
     $('#im-rb', body).onchange = e => IMPrefs.set('readback', e.target.checked);
     $('#im-vc', body).onchange = e => IMPrefs.set('voiceconfirm', e.target.checked);
     $('#pl-add', body).onclick = () => { $('#pl-rows', body).insertAdjacentHTML('beforeend', this.row({ key: 'p' + uid(), name: '', price: '', unit: 'each', aliases: [] })); };

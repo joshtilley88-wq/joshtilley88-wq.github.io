@@ -2,7 +2,7 @@
 'use strict';
 const NAV = [
   ['dashboard', 'Dashboard', 'home'], ['invoices', 'Invoices', 'file'], ['customers', 'Customers', 'users'], ['services', 'Services', 'tag'],
-  ['expenses', 'Expenses', 'receipt'], ['outbox', 'Email outbox', 'mail'], ['contracts', 'Contracts', 'pen'], ['forms', 'Questionnaires', 'clip'],
+  ['expenses', 'Expenses', 'receipt'], ['outbox', 'Email outbox', 'mail'], ['reminders', 'Reminders log', 'clock'], ['contracts', 'Contracts', 'pen'], ['forms', 'Questionnaires', 'clip'],
   ['reports', 'Reports', 'chart'], ['import', 'Import CSV', 'upload'], ['settings', 'Settings', 'sliders'],
 ];
 
@@ -152,7 +152,7 @@ async function boot() {
   if (location.hash.length > 2) Pager.set(1, false);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });
   // background jobs: Drive auto-backup + due-email notification, on open and whenever the app comes back to the front
-  const wake = () => { autoBackup().catch(() => { }); dueNotifyCheck().catch(() => { }); if (syncOn()) syncNow('focus').catch(() => { }); };
+  const wake = () => { Chase.syncNow().catch(() => { }); autoBackup().catch(() => { }); dueNotifyCheck().catch(() => { }); if (syncOn()) syncNow('focus').catch(() => { }); };
   startSync();
   wake();
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });

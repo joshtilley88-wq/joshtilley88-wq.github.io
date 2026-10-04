@@ -15,7 +15,7 @@ const Talk = {
   start(prefill = '') {
     if (!this.supported()) return false;
     Voice.stopSpeaking(); Voice.unlock();
-    this.on = true; this.inv = null; this.entry = null; this.c = IMConvo.create(Thinking.context(), { prefill });
+    this.on = true; this.inv = null; this.entry = null; this.c = IMConvo.create(Object.assign(Thinking.context(), { owed: Chase.owedList(), today: today() }), { prefill });
     if (prefill) this.c.history.push({ who: 'you', text: prefill });
     this.ui(true); Sender.available();          // warm up the send check while he talks
     this.listen();
@@ -110,6 +110,7 @@ const Talk = {
     if (!this.on) return;
     if (r.action === 'send') { await this.send(); return; }
     if (r.action === 'save-only') { await this.save(); }
+    if (r.action && r.action.type === 'chase') { await Chase.setChasing(r.action.ids, r.action.on); }
     if (r.end) { this.stop('end'); return; }
     if (r.listen) this.listen();
   },

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Invoice</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https://opekqrldytqvjziowbqo.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+<style>
+  body { background: #F5F5F6; margin: 0; }
+  .vw { max-width: 460px; margin: 0 auto; padding: 28px 18px 40px; }
+  .vw .card { padding: 22px; }
+  .vw .amt { font-size: 34px; font-weight: 750; margin: 6px 0 2px; }
+  .vw .row2 { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .vw .pay { width: 100%; justify-content: center; margin-top: 18px; }
+  .vw .stop { background: none; border: 0; color: #8A9099; text-decoration: underline; font-size: 13px; margin-top: 22px; cursor: pointer; }
+  .vw .foot { text-align: center; color: #A3A8B0; font-size: 12px; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="vw" id="vw"><div class="card"><p class="muted">Loading invoice…</p></div></div>
+<script src="js/view.js"></script>
+</body>
+</html>

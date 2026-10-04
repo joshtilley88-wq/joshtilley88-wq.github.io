@@ -155,6 +155,39 @@
       (d.customer.email ? ` Sending to ${sayEmail(d.customer.email)}.` : '');
   }
 
+  /* ---------- payment-chasing commands: "who owes me money?", "stop chasing Dave", "chase the Smith invoice" ---------- */
+  function overdueWords(due, today) {
+    if (!due || !today) return '';
+    const d = Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(due + 'T00:00:00Z')) / 86400000);
+    return d > 1 ? `${d} days overdue` : d === 1 ? '1 day overdue' : d === 0 ? 'due today' : d === -1 ? 'due tomorrow' : `due in ${-d} days`;
+  }
+  function findOwed(list, who) {
+    let w = lc(who).replace(/[?.!,]/g, ' ').replace(/\b(?:the|up|for|me|please|mate|invoice|invoices|job|jobs|bill|account|one)\b/g, ' ').replace(/'s\b/g, '').replace(/\s+/g, ' ').trim();
+    const digits = (P.wordsToNumbers(lc(who).replace(/[^a-z0-9 -]/g, ' ')).match(/\d+/g) || []).join('');
+    if (!w && digits.length < 2) return [];
+    if (digits.length >= 2) { const hit = list.filter(x => String(x.number).replace(/\D/g, '').endsWith(digits)); if (hit.length) return hit; }
+    const toks = w.split(' ').filter(t => t.length > 1 && !/^\d+$/.test(t));
+    return list.filter(x => { const n = lc(x.name).split(/\s+/); return toks.length && toks.every(t => n.some(p => p === t || p.replace(/s$/, '') === t.replace(/s$/, ''))); });
+  }
+  function command(text, ctx) {
+    const t = lc(text).replace(/[?.!,]/g, ' ').replace(/\s+/g, ' ').trim(), list = (ctx && ctx.owed) || [], today = ctx && ctx.today;
+    if (/\b(who owes|who still owes|who hasn'?t paid|what am i owed|how much am i owed|how much is owed|what'?s outstanding|what is outstanding|unpaid invoices|outstanding invoices|money owed|owes me)\b/.test(t)) {
+      if (!list.length) return { say: 'Nobody owes you anything right now. Too easy.' };
+      const tot = list.reduce((a, x) => a + x.balance, 0), sorted = list.slice().sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+      const top = sorted.slice(0, 5).map(x => `${first(x.name)}, ${sayMoney(x.balance)}, ${overdueWords(x.dueDate, today)}${x.chasing ? '' : ', not being chased'}`);
+      return { say: `${list.length} unpaid invoice${list.length > 1 ? 's' : ''}, ${sayMoney(tot)} all up. ${top.join('. ')}.${list.length > 5 ? ` And ${list.length - 5} more.` : ''}` };
+    }
+    let m = t.match(/\b(?:stop|pause|quit|cancel|turn off|don'?t keep|no more) (?:chasing|reminding|reminders (?:for|to)|reminders on|chase on|the reminders for)\s+(.+)$/) || t.match(/\bdon'?t chase\s+(.+)$/);
+    let on = false;
+    if (!m) { m = t.match(/^(?:can you |please |could you )?(?:chase|start chasing|resume chasing|keep chasing|turn on chasing for|turn chasing on for|chase up|remind)\s+(.+)$/); on = true; }
+    if (!m) return null;
+    const hits = findOwed(list, m[1]);
+    if (!hits.length) return { say: `I couldn’t find an unpaid invoice for ${m[1].replace(/\b(the|invoice)\b/g, '').trim().replace(/\b[a-z]/g, x => x.toUpperCase()) || 'that'}.` };
+    const names = [...new Set(hits.map(x => first(x.name)))].join(' and ');
+    const n = hits.length, what = n > 1 ? `${n} invoices` : `invoice ${hits[0].number}`;
+    return { say: on ? `Righto, I’ll chase ${names}, ${what}, ${sayMoney(hits.reduce((a, x) => a + x.balance, 0))}. Reminders go out by text, Monday to Saturday, 8 till 7.` : `Okay, I’ve stopped chasing ${names}. That’s ${what}.`, action: { type: 'chase', ids: hits.map(x => x.id), on } };
+  }
+
   /* ---------- the machine ---------- */
   const SILENCE_LIMIT = 2;
   function create(ctx, opts = {}) {
@@ -262,6 +295,7 @@
     const text = String(ev.text || '').trim();
     if (!text) return step(c, { type: 'silence' });
     c.silences = 0; c.heard.push(text); c.history.push({ who: 'you', text });
+    if (c.state === 'job' && !c.draft) { const cmd = command(text, c.ctx); if (cmd) { c.command = cmd.action || { type: 'info' }; return out(c, cmd.say, { end: true, action: cmd.action || null }); } }
     if (isStop(text) && c.state !== 'sending') return out(c, c.draft ? 'Okay, I’ve stopped. Nothing was sent.' : 'Okay, cancelled.', { end: true });
 
     if (c.state === 'job') {
@@ -292,6 +326,6 @@
     return out(c, '');
   }
 
-  const api = { create, step, spokenEmail, extractSpokenEmail, applyCorrection, yesNo, isStop, summary, sayEmail, sayMoney, sayNum, nextQuestion };
+  const api = { command, findOwed, overdueWords, create, step, spokenEmail, extractSpokenEmail, applyCorrection, yesNo, isStop, summary, sayEmail, sayMoney, sayNum, nextQuestion };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.IMConvo = api;
 })(typeof self !== 'undefined' ? self : this);

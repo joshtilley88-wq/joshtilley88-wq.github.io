@@ -65,3 +65,55 @@ supabase functions deploy invoicemate-send --project-ref opekqrldytqvjziowbqo --
 supabase functions deploy invoicemate-tts  --project-ref opekqrldytqvjziowbqo --no-verify-jwt
 ```
 `--no-verify-jwt` is used because the app has no Supabase sign-in. Each function checks the `x-im-app` header and the Origin (https://joshtilley88-wq.github.io or localhost) itself. GET with the header is a health check, which the app uses to decide whether to show **Send now**.
+
+## Automatic payment chasing
+
+Unpaid invoices get friendly reminders by **SMS** (email as backup if there's no mobile or the SMS fails). The default is **3, 7 and 14 days** after the due date, with an optional heads-up on the due date. The 14-day reminder is firmer but still polite.
+
+- **What the app does:** chase data is local like everything else. The app syncs only what the server needs (`js/chase.js`, see `Chase.syncNow`) when invoices, payments, customers or settings change, and when the app opens. That's the invoice no, amount owing, due date, customer first name, mobile and email, business name, schedule and wording. The device is identified by a random key (localStorage `im.chaseKey`), and the server stores only its SHA-256.
+- **Turning it on or off:**
+  - Overall: Settings → Payment chasing. The schedule, the due-date option and the editable templates (with previews) are all there too.
+  - Per invoice: the "Chase this invoice" toggle in the invoice editor.
+  - Per customer: "Chase payments automatically" in Edit customer.
+  - By voice, in the hands-free conversation: "stop chasing Dave", "chase the Smith invoice", "chase invoice ten twenty one", "who owes me money?".
+- **When it stops:** chasing stops when the invoice is paid in full, deleted, turned off, or when the customer opts out.
+- **Reminders log:** menu → Reminders log (`#/reminders`). It shows what's being chased, the next reminder, and everything sent.
+- **Public page:** `view.html?t=TOKEN` shows a summary (business, invoice no, amount, due date). "Pay online" is a **placeholder** for a later phase; Stripe isn't integrated. "Stop payment reminders" opts the customer out.
+- **Spam Act:**
+  - Every message names the business.
+  - SMS ends "Reply STOP to opt out." (live provider) or carries an opt-out link.
+  - Email has an unsubscribe link plus `List-Unsubscribe` one-click headers.
+  - Opting out stops all chases for that customer (matched by customer, mobile or email).
+- **Send window:** **Mon–Sat 8:00am–6:59pm Australia/Sydney**, DST-safe via Intl. Nothing goes out on Sundays or NSW public holidays (hardcoded list for 2026–27 in `js/chase-core.js`). If a reminder falls outside the window, it waits for the next one. If several steps are overdue at once, only the latest is sent, so there's never a burst.
+
+### Server
+- **Tables:** `im_chase`, `im_chase_log` and `im_chase_optout` (`supabase/migrations/20261004_im_chase.sql`). RLS is on with no policies, and anon/authenticated access is revoked, so only the edge function (service role) can touch them.
+- **Function `invoicemate-chase`:**
+  - App routes `sync`, `state` and `ping` need the `x-im-app` header plus `x-im-owner`, with the same CORS and rate limits as invoicemate-send.
+  - Public routes `view` and `unsub` work by token.
+  - `run` needs the `x-cron-secret` header. Options: `dry`, `now` (dry runs only), and `ignoreQuietHours` (honoured only while SMS and email are both in test mode).
+- **Cron:** pg_cron job `invoicemate-chase-run` runs at `*/30 * * * *` (every 30 minutes) and calls `run` through pg_net. The secret lives in Vault (`im_chase_cron_secret`) and in the function secret `CHASE_CRON_SECRET`.
+- **Redeploy:** run `./supabase/deploy-chase.sh`. It copies `js/chase-core.js` into `_shared/`, applies the migration, sets the secret, deploys and (re)schedules the cron job.
+
+### SMS: test mode and going live
+- `supabase/functions/_shared/sms.ts` has the provider interface `sendSms(to, body)`.
+- **Test mode (default):** nothing is sent to any phone. Each reminder is logged as "test (not sent)" and Josh gets an email copy.
+- **Live:** the stubbed live adapter is **Cellcast** (`https://api.cellcast.com/api/v1/gateway`, Bearer key, shared two-way number so "Reply STOP" works, `replyStopToOptOut`).
+- **Going live:**
+  1. Create a Cellcast account and buy credits (Josh decides).
+  2. `npx supabase secrets set CELLCAST_API_KEY=... SMS_LIVE=true --project-ref opekqrldytqvjziowbqo`
+  3. Redeploy.
+- **Email:** for real customer email, verify a sending domain in Resend and set `EMAIL_TEST_MODE` to false in `_shared/resend.ts`.
+- **Sender ID:** to use a business-name sender ID (one-way, no STOP replies), register it in the ACMA SMS Sender ID Register through the provider first. Unregistered IDs show as "Unverified" since 1 July 2026.
+
+### Limits
+- The server only knows about invoices after the app has synced (open the app once after making changes).
+- Chases are tied to this browser's device key. Clearing site data creates a new key, and the old chases keep running until they're paid or stopped. Turn chasing off before wiping a device.
+- The owner key and rate limits are light protection. Review them before real customers.
+- The public holiday list is hardcoded (NSW 2026–27).
+- STOP replies to the live number are handled by Cellcast's opt-out list. They are not fed back into the app automatically; a webhook is a later phase.
+
+### Later (not built)
+- Voice quoting.
+- "Turn quote into invoice".
+- Pay-now (Stripe).

@@ -5,7 +5,7 @@ const cloudEnabled = () => false;
 const SY = { status: 'idle' };
 const syncOn = () => false;
 async function loadSync() { }
-async function syncMark() { }
+async function syncMark(col) { if (typeof Chase !== 'undefined') Chase.touched(col); }   // InvoiceMate: payment chasing watches saves
 function startSync() { }
 async function syncNow() { }
 function syncStatusText() { return 'Local only'; }

@@ -68,7 +68,7 @@ function invRow(i) {
   const ic = { paid: 'ok', overdue: 'bad', 'part-paid': 'warn', sent: 'lav' }[st] || '';
   return `<a class="li" href="#/invoice/${i.id}" style="text-decoration:none;color:inherit"><span class="ic ${ic}">${icon(i.kind === 'quote' ? 'edit' : 'file')}</span>
     <div class="grow"><div class="t">${esc(custName(cu))}</div><div class="s">${esc(i.number)} · ${fmtD(i.issueDate)}</div></div>
-    <div class="right"><div class="num" style="font-weight:700">${money(c.total)}</div>${i.kind === 'quote' ? pill('quote') : stPill(i, st)}</div></a>`;
+    <div class="right"><div class="num" style="font-weight:700">${money(c.total)}</div>${i.kind === 'quote' ? pill('quote') : stPill(i, st)}${i.kind === 'quote' ? '' : Chase.pill(i)}</div></a>`;
 }
 
 /* ======================= INVOICES LIST ======================= */
@@ -87,7 +87,7 @@ V.invoices = async (view, _, q) => {
       if (f === 'unpaid' && (st === 'paid' || st === 'draft')) return false;
       return !s || (i.number + ' ' + custName(byId('customers', i.customerId))).toLowerCase().includes(s);
     });
-    $('#inv-tb').innerHTML = rows.map(i => { const c = invCalc(i); return `<tr class="click" data-href="invoice/${i.id}"><td><b>${esc(i.number)}</b></td><td>${esc(custName(byId('customers', i.customerId)))}</td><td class="num">${fmtD(i.issueDate)}</td><td class="num">${fmtD(i.dueDate)}</td><td class="right num">${money(c.total)}</td><td class="right num">${i.kind === 'quote' ? '' : money(c.balance)}</td><td>${i.kind === 'quote' ? pill('quote') + ' ' : ''}${stPill(i, invStatus(i, c))}</td></tr>`; }).join('') || `<tr><td colspan="7" class="empty">Nothing here yet.</td></tr>`;
+    $('#inv-tb').innerHTML = rows.map(i => { const c = invCalc(i); return `<tr class="click" data-href="invoice/${i.id}"><td><b>${esc(i.number)}</b></td><td>${esc(custName(byId('customers', i.customerId)))}</td><td class="num">${fmtD(i.issueDate)}</td><td class="num">${fmtD(i.dueDate)}</td><td class="right num">${money(c.total)}</td><td class="right num">${i.kind === 'quote' ? '' : money(c.balance)}</td><td>${i.kind === 'quote' ? pill('quote') + ' ' : ''}${stPill(i, invStatus(i, c))}${i.kind === 'quote' ? '' : ' ' + Chase.pill(i)}</td></tr>`; }).join('') || `<tr><td colspan="7" class="empty">Nothing here yet.</td></tr>`;
   };
   $$('.seg button', view).forEach(b => b.onclick = () => go('invoices?f=' + b.dataset.f));
   $('#inv-s').oninput = draw; draw();
@@ -135,6 +135,7 @@ V.invoice = async (view, [id], q) => {
             <div><button class="btn ghost icon" data-del="${k}" title="Remove">${icon('trash')}</button></div></div>`).join('') || `<div class="empty">No items yet. Add one from your services list or a custom item.</div>`}</div>
         </div>
         <div class="card"><label class="f">Notes / terms shown on the ${isQ() ? 'quote' : 'invoice'}<textarea id="ie-notes" placeholder="${esc(S.settings.business.paymentTerms)}">${esc(inv.notes || '')}</textarea></label></div>
+        ${!isQ() ? chaseCard(inv) : ''}
         ${!isQ() ? `<div class="card"><div class="card-h"><span class="ic">${icon('mail')}</span><div><h2>Payment emails</h2><div class="small muted">Two scheduled emails go into your outbox. You'll see them on the dashboard on the day.</div></div></div>
           <div class="grid g2">
             <div class="stack"><label class="chk"><input type="checkbox" id="ie-edep" ${inv.emailDeposit !== false ? 'checked' : ''}> <b>1. Deposit email</b></label>
@@ -177,6 +178,7 @@ V.invoice = async (view, [id], q) => {
     v('ie-issue').onchange = e => { const old = inv.issueDate; inv.issueDate = e.target.value; if (inv.depositDue === old) inv.depositDue = inv.issueDate; dirty = true; draw(); };
     v('ie-due').onchange = e => { const old = inv.dueDate; inv.dueDate = e.target.value; if (!inv.balanceEmailDate || inv.balanceEmailDate === old) inv.balanceEmailDate = inv.dueDate; dirty = true; draw(); };
     v('ie-sent').onchange = e => { inv.sent = e.target.checked; dirty = true; };
+    if (v('ie-chase')) v('ie-chase').onchange = e => { inv.chase = e.target.checked; dirty = true; };
     if (v('ie-acc')) v('ie-acc').onchange = e => { inv.accepted = e.target.checked; dirty = true; };
     v('ie-notes').oninput = e => { inv.notes = e.target.value; dirty = true; };
     v('ie-svc').onchange = e => { const s = byId('services', e.target.value); if (s) { inv.items.push({ desc: s.name, details: s.description || '', qty: 1, price: num(s.price), discountPct: 0, gst: s.gst !== false && gstOn, serviceId: s.id }); dirty = true; draw(); } };
@@ -339,8 +341,10 @@ function editCustomerModal(c, after) {
   const m = openModal({ title: c ? 'Edit customer' : 'New customer', body: `<div class="grid g2">${F.map(([k, l, t]) => `<label class="f">${l}<input type="${t || 'text'}" data-k="${k}" value="${esc(x[k] || '')}"></label>`).join('')}</div>
     <div class="stack" style="margin-top:16px"><label class="f">Address<textarea data-k="address" rows="2" style="min-height:60px">${esc(x.address || '')}</textarea></label><label class="f">Notes<textarea data-k="notes">${esc(x.notes || '')}</textarea></label></div>`,
     foot: `<button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn pri" id="cm-ok">${icon('check')} Save</button>` });
+  $('.modal-b', m).insertAdjacentHTML('beforeend', `<label class="chk" style="margin-top:14px"><input type="checkbox" id="cm-chase" ${x.chase !== false ? 'checked' : ''}> Chase payments automatically (SMS / email reminders when an invoice is overdue)</label>${x.chaseOptedOut ? '<div class="small" style="color:var(--bad);margin-top:6px">This customer opted out of reminders. Only turn this back on if they’ve asked you to.</div>' : ''}`);
   $('#cm-ok', m).onclick = async () => {
     const o = c ? byId('customers', c.id) : { createdAt: new Date().toISOString() }; $$('[data-k]', m).forEach(i => o[i.dataset.k] = i.value.trim());
+    const chOn = $('#cm-chase', m).checked; if (chOn && o.chase === false && o.chaseOptedOut) o.chaseOptedOut = false; o.chase = chOn;
     if (!o.name && !o.business) { toast('Enter a name or business'); return; }
     await save('customers', o); m._onClose = null; closeModal(); toast('Customer saved'); after ? after(o) : render();
   };
@@ -361,7 +365,7 @@ V.customer = async (view, [id]) => {
     <div class="stack"><div class="card"><div class="card-h"><h2>Invoice history</h2></div><div class="list">${invs.map(invRow).join('') || '<div class="empty">No invoices yet.</div>'}</div></div>
       <div class="card"><div class="card-h"><h2>Payments</h2></div><div class="list">${S.payments.filter(p => real.some(i => i.id === p.invoiceId)).sort((a, b) => b.date.localeCompare(a.date)).map(p => `<div class="li" style="cursor:default"><span class="ic ok">${icon('dollar')}</span><div class="grow"><div class="t num">${money(p.amount)}</div><div class="s">${fmtD(p.date)} · ${esc(byId('invoices', p.invoiceId)?.number)}</div></div><button class="btn ghost icon" data-act="receipt-menu" data-id="${p.id}">${icon('receipt')}</button></div>`).join('') || '<div class="small muted">None yet.</div>'}</div></div></div>
     <div class="stack">
-      <div class="card"><h2 style="margin-bottom:12px">Details</h2><table class="tbl">${[['Contact', c.name], ['Business', c.business], ['Email', c.email], ['Phone', c.phone], ['ABN', c.abn], ['Address', c.address]].map(([l, v]) => `<tr><td class="muted" style="width:110px">${l}</td><td style="white-space:pre-wrap">${esc(v || '—')}</td></tr>`).join('')}</table>
+      <div class="card"><h2 style="margin-bottom:12px">Details</h2><table class="tbl">${[['Contact', c.name], ['Business', c.business], ['Email', c.email], ['Phone', c.phone], ['ABN', c.abn], ['Address', c.address]].concat([['Chasing', c.chaseOptedOut ? 'Opted out of reminders' : c.chase === false ? 'Off' : 'On (automatic reminders)']]).map(([l, v]) => `<tr><td class="muted" style="width:110px">${l}</td><td style="white-space:pre-wrap">${esc(v || '—')}</td></tr>`).join('')}</table>
         ${c.notes ? `<div class="note" style="margin-top:12px;white-space:pre-wrap">${esc(c.notes)}</div>` : ''}<div class="row" style="margin-top:14px"><button class="btn sm danger" id="cu-del">${icon('trash')} Delete customer</button></div></div>
       <div class="card"><div class="card-h"><h2>Contracts</h2><div class="spacer"></div><a class="btn sm" href="#/contracts?new=1&customer=${id}">${icon('plus')} New</a></div><div class="list">${ks.map(contractRow).join('') || '<div class="small muted">None yet.</div>'}</div></div>
       <div class="card"><div class="card-h"><h2>Questionnaires</h2><div class="spacer"></div><button class="btn sm" data-act="import-answers" data-customer="${id}">${icon('download')} Import answers</button><a class="btn sm" href="#/forms?send=1&customer=${id}">${icon('send')} Send</a></div>

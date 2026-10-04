@@ -96,3 +96,8 @@ body.im-pager #pager { position: fixed; inset: 0; overflow: hidden; touch-action
 .linkish { border: 0; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; padding: 6px 4px; }
 .linkish:hover { color: var(--ink); }
 #clean.convo .im-hint { display: none; }
+
+/* payment chasing */
+.sms-bub { background: #E9F5E9; border-radius: 18px 18px 18px 6px; padding: 10px 14px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; max-width: 420px; }
+.ch-t summary { cursor: pointer; padding: 6px 0; }
+.list .right .pill + .pill { margin-left: 4px; }

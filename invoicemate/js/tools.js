@@ -465,7 +465,7 @@ async function runImport(type, recs, opt) {
 V.settings = async (view, _, q) => {
   const tab = q.get('tab') || 'business'; const st = S.settings, b = st.business;
   const tabs = [['business', 'Business'], ['invoices', 'Invoices & numbering'], ['emails', 'Email templates'], ['categories', 'Expense categories'], ['data', 'Data & backup'], ...(cloudEnabled() ? [['cloud', 'Cloud sync']] : [])];
-  tabs.splice(1, 0, ['voice', 'Voice & prices']);   // InvoiceMate
+  tabs.splice(1, 0, ['voice', 'Voice & prices'], ['chase', 'Payment chasing']);   // InvoiceMate
   view.innerHTML = `${demoBanner()}${pageH('Settings')}<div class="tabs">${tabs.map(([k, l]) => `<button data-t="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div><div id="st-body"></div>`;
   $$('.tabs button', view).forEach(x => x.onclick = () => go('settings?tab=' + x.dataset.t));
   const body = $('#st-body');
@@ -494,6 +494,7 @@ V.settings = async (view, _, q) => {
   } else if (tab === 'emails') templatesEditor(body);
   else if (tab === 'cloud') await cloudTab(body);
   else if (tab === 'voice') IMSettings.render(body);
+  else if (tab === 'chase') chaseSettings(body);
   else if (tab === 'categories') {
     body.innerHTML = `<div class="card" style="max-width:620px"><label class="f">One category per line<textarea id="st-cats" style="min-height:300px">${esc(st.expenseCategories.join('\n'))}</textarea></label><button class="btn pri" id="st-cs" style="margin-top:14px">${icon('check')} Save</button></div>`;
     $('#st-cs').onclick = async () => { st.expenseCategories = $('#st-cats').value.split('\n').map(s => s.trim()).filter(Boolean); await saveSettings(); toast('Saved'); };

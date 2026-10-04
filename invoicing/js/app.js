@@ -65,25 +65,51 @@ function gmailURL(to, subject, body) { return 'https://mail.google.com/mail/?vie
 function openCompose(entry, opts = {}) {
   const m0 = composeEmail(entry);
   const inv = entry.invoiceId && byId('invoices', entry.invoiceId);
+  // PDF attachment: invoices are always sent as a PDF; deposit/balance/receipt emails can add one
+  const pdf = typeof pdfForEmail === 'function' ? pdfForEmail(entry) : null, pdfOnly = !!pdf && entry.type === 'invoice', share = pdf && canShareFiles();
+  let pdfBlob = null, pdfErr = null; const pdfP = pdf ? pdf.make().then(b => { pdfBlob = b; }, e => { pdfErr = e; console.warn('PDF failed', e); }) : null;
+  const pdfBtn = pdf ? `<button class="btn ${pdfOnly ? 'out' : ''}" id="em-pdf">${icon(share ? 'send' : 'download')} ${share ? (pdfOnly ? 'Share PDF' : 'Send with PDF') : (pdfOnly ? 'Download PDF &amp; open email' : 'Email with PDF')}</button>` : '';
+  const pdfNote = !pdf ? '' : share ? `Tap <b>${pdfOnly ? 'Share PDF' : 'Send with PDF'}</b> and choose Gmail (or your email app): it opens with <b>${esc(pdf.name)}</b> attached and the message filled in. Add the To address if it's empty (it's copied for you). Then come back and tap <b>Mark as sent</b>.`
+    : `<b>${pdfOnly ? 'Download PDF &amp; open email' : 'Email with PDF'}</b> saves <b>${esc(pdf.name)}</b> to your downloads and opens your email app with the message filled in. Attach the PDF, send it, then come back and tap <b>Mark as sent</b>.`;
   const m = openModal({
     title: esc(EMAIL_LABEL[entry.type] || 'Email') + (inv ? ' · ' + esc(inv.number) : ''), wide: true,
     body: `<div class="stack">
       <label class="f">To<input type="email" id="em-to" value="${esc(m0.to)}" placeholder="client@example.com"></label>
       <label class="f">Subject<input type="text" id="em-sub" value="${esc(m0.subject)}"></label>
       <label class="f">Message<textarea id="em-body" style="min-height:260px">${esc(m0.body)}</textarea></label>
-      <div class="note" id="em-note">Opens your email app with everything filled in. Attach a PDF if you want one (use <b>View / Print → Save as PDF</b> first). Then come back and tap <b>Mark as sent</b>.</div>
+      <div class="note" id="em-note">${pdfOnly ? pdfNote : `Opens your email app with everything filled in.${pdf ? ' ' + pdfNote : ' Then come back and tap <b>Mark as sent</b>.'}`}</div>
     </div>`,
     foot: `${entry.id ? `<button class="btn ghost" id="em-skip">Skip / dismiss</button>` : ''}<div class="spacer"></div>
       <button class="btn" id="em-copy">${icon('copy')} Copy email</button>
-      <a class="btn" id="em-gmail" target="_blank" rel="noopener">Open in Gmail</a>
-      <a class="btn out" id="em-open">${icon('send')} Open in email app</a>
+      ${pdfOnly ? '' : `<a class="btn" id="em-gmail" target="_blank" rel="noopener">Open in Gmail</a>
+      <a class="btn out" id="em-open">${icon('send')} Open in email app</a>`}${pdfBtn}
       <button class="btn pri" id="em-sent">${icon('check')} Mark as sent</button>`,
   });
   const val = () => ({ to: $('#em-to', m).value.trim(), subject: $('#em-sub', m).value, body: $('#em-body', m).value });
-  const upd = () => { const v = val(); const u = mailtoURL(v.to, v.subject, v.body); $('#em-open', m).href = u; $('#em-gmail', m).href = gmailURL(v.to, v.subject, v.body);
+  const upd = () => { if (pdfOnly) return; const v = val(); const u = mailtoURL(v.to, v.subject, v.body); $('#em-open', m).href = u; $('#em-gmail', m).href = gmailURL(v.to, v.subject, v.body);
     $('#em-note', m).classList.toggle('pink', u.length > 1900); if (u.length > 1900) $('#em-note', m).innerHTML = 'This email is long. Some desktop email apps cut off very long mailto links, so if the text looks cut off, use <b>Copy email</b> and paste it instead. Gmail usually handles it fine.'; };
   m.addEventListener('input', upd); upd();
   $('#em-copy', m).onclick = async () => { const v = val(); toast(await copyText(`To: ${v.to}\nSubject: ${v.subject}\n\n${v.body}`) ? 'Email copied' : 'Copy failed'); };
+  if (pdf) $('#em-pdf', m).onclick = async e => {
+    const btn = e.currentTarget, v = val();
+    if (!pdfBlob && !pdfErr) {   // still being made: wait, then (for sharing) ask for one more tap so the browser allows the share sheet
+      const lbl = btn.innerHTML; btn.disabled = true; btn.textContent = 'Making PDF…'; await pdfP; btn.disabled = false; btn.innerHTML = lbl;
+      if (pdfBlob && share) { toast('PDF ready. Tap again to share'); return; }
+    }
+    if (!pdfBlob) { toast('Couldn\'t make the PDF: ' + (pdfErr && pdfErr.message || 'unknown error')); return; }
+    const done = msg => { const n = $('#em-note', m); n.classList.add('pink'); n.innerHTML = msg; };
+    if (share) {
+      const file = new File([pdfBlob], pdf.name, { type: 'application/pdf' });
+      if (v.to && navigator.clipboard) navigator.clipboard.writeText(v.to).catch(() => { });
+      try { await navigator.share({ files: [file], title: v.subject, text: v.body }); done(`Sent it? Tap <b>Mark as sent</b>.${v.to ? ` (The address ${esc(v.to)} was copied in case Gmail left To empty.)` : ''}`); }
+      catch (err) { if (err && err.name === 'AbortError') return; download(pdf.name, pdfBlob); toast('Sharing didn\'t work here, so the PDF was downloaded instead'); }
+      return;
+    }
+    download(pdf.name, pdfBlob);
+    setTimeout(() => { const a = document.createElement('a'); a.href = mailtoURL(v.to, v.subject, v.body); a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }, 400);
+    toast('PDF downloaded. Attach it to the email that opens');
+    done(`<b>${esc(pdf.name)}</b> is in your downloads. Attach it to the email, send it, then tap <b>Mark as sent</b>.`);
+  };
   const persist = async status => {
     const v = val(); const e = entry;
     if (v.subject !== m0.subject || v.body !== m0.body) { e.subject = v.subject; e.body = v.body; }

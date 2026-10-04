@@ -214,7 +214,7 @@ V.invoice = async (view, [id], q) => {
           <div class="list">${pays.map(p => `<div class="li" style="cursor:default"><span class="ic ok">${icon('dollar')}</span><div class="grow"><div class="t num">${money(p.amount)}</div><div class="s">${fmtD(p.date)} · ${esc(p.method || '')}</div></div>
             <button class="btn ghost icon" data-act="receipt-menu" data-id="${p.id}" title="Receipt">${icon('receipt')}</button><button class="btn ghost icon" data-act="del-payment" data-id="${p.id}" title="Delete">${icon('trash')}</button></div>`).join('') || '<div class="small muted">No payments yet.</div>'}</div></div>` : ''}
         ${inv.id ? `<div class="card"><h3 style="margin-bottom:10px">Actions</h3><div class="row">
-          ${!isQ() ? `<button class="btn sm" data-act="email-invoice" data-id="${inv.id}">${icon('mail')} Email invoice</button>` : `<button class="btn sm" data-act="convert-quote" data-id="${inv.id}">${icon('file')} Convert to invoice</button>`}
+          ${!isQ() ? `<button class="btn sm" data-act="email-pdf" data-id="${inv.id}">${icon('mail')} Email PDF</button>` : `<button class="btn sm" data-act="convert-quote" data-id="${inv.id}">${icon('file')} Convert to invoice</button>`}
           <button class="btn sm" data-act="dup-invoice" data-id="${inv.id}">${icon('copy')} Duplicate</button>
           <button class="btn sm danger" data-act="del-invoice" data-id="${inv.id}">${icon('trash')} Delete</button></div></div>` : ''}
       </div>
@@ -323,7 +323,7 @@ ACT['del-invoice'] = async el => {
   for (const e of S.outbox.filter(e => e.invoiceId === inv.id)) await remove('outbox', e.id);
   await remove('invoices', inv.id); leaveGuard = null; toast('Deleted'); go('invoices');
 };
-ACT['email-invoice'] = el => { const inv = byId('invoices', el.dataset.id); openCompose({ type: 'invoice', invoiceId: inv.id, customerId: inv.customerId, status: 'queued', scheduledDate: today(), createdAt: new Date().toISOString() }); };
+ACT['email-pdf'] = el => { const inv = byId('invoices', el.dataset.id); openCompose({ type: 'invoice', invoiceId: inv.id, customerId: inv.customerId, status: 'queued', scheduledDate: today(), createdAt: new Date().toISOString() }); };
 ACT['del-payment'] = async el => {
   const p = byId('payments', el.dataset.id); if (!await confirmBox(`Delete the payment of ${money(p.amount)} on ${fmtD(p.date)}?`)) return;
   await remove('payments', p.id); for (const e of S.outbox.filter(e => e.paymentId === p.id && e.status !== 'sent')) await remove('outbox', e.id); toast('Payment deleted'); render();
@@ -407,8 +407,8 @@ function receiptDoc(p) {
 V.doc = async (view, [type, id]) => {
   if (type === 'invoice') {
     const inv = byId('invoices', id); if (!inv) { view.innerHTML = '<div class="card empty">Not found</div>'; return; }
-    view.innerHTML = `<div class="doc-actions no-print"><a class="btn" href="#/invoice/${id}">${icon('back')} Back to edit</a><button class="btn pri" id="d-print">${icon('printer')} Print / Save as PDF</button>${inv.kind !== 'quote' ? `<button class="btn" data-act="email-invoice" data-id="${id}">${icon('mail')} Email</button>` : ''}</div>${invoiceDoc(inv)}
-      <p class="small muted no-print" style="text-align:center">Tip: in the print dialog choose <b>Save as PDF</b> as the destination to get a PDF you can attach to an email.</p>`;
+    view.innerHTML = `<div class="doc-actions no-print"><a class="btn" href="#/invoice/${id}">${icon('back')} Back to edit</a><button class="btn pri" id="d-print">${icon('printer')} Print / Save as PDF</button>${inv.kind !== 'quote' ? `<button class="btn" data-act="email-pdf" data-id="${id}">${icon('mail')} Email PDF</button>` : ''}</div>${invoiceDoc(inv)}
+      ${inv.kind !== 'quote' ? '<p class="small muted no-print" style="text-align:center"><b>Email PDF</b> makes this invoice as a PDF and attaches it for you.</p>' : ''}`;
     $('#d-print').onclick = () => printHTML(invoiceDoc(inv));
   }
 };

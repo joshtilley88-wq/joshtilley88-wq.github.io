@@ -3,7 +3,7 @@
 Static, no-build invoicing web app for an Australian sole trader (AUD, GST 10%).
 Live at https://joshtilley88-wq.github.io/invoicing/
 
-* Plain HTML/CSS/vanilla JS. Chart.js 4.4.1 and the Inter font are vendored (no CDN calls).
+* Plain HTML/CSS/vanilla JS. Chart.js 4.4.1, jsPDF 4.2.1 (MIT, loaded only when a PDF is made) and the Inter font are vendored (no CDN calls).
 * **By default all user data stays in the browser** (IndexedDB database `invoicing`). Cloud sync (below) is opt-in. Nothing in this repo contains real customer or financial data.
   Settings → Data has Load demo data (fake), Export backup / Import backup (JSON, includes receipt files) and Clear all data.
 * No AI, no backend, no tracking. CSP allows `'self'` plus, only for the optional Google Drive backup, `accounts.google.com/gsi/*` (sign-in) and `www.googleapis.com` (Drive API). Nothing is loaded from Google until you tap **Connect Google Drive** / a backup runs.
@@ -17,6 +17,7 @@ Live at https://joshtilley88-wq.github.io/invoicing/
 | `js/sync.js` | Opt-in cloud sync (Supabase): email-code sign-in, Move my data to the cloud, offline queue, push/pull, receipts in Storage, Settings → Cloud sync tab |
 | `js/vendor/supabase.js` | supabase-js 2.117.2 (UMD), loaded only when cloud sync is used |
 | `supabase/migrations/` | Database schema, RLS, RPCs, Storage bucket (apply with `supabase db push` / `db query --linked`) |
+| `js/pdf.js` | Email PDF: draws the formal invoice / receipt as an A4 PDF with real (selectable) text using `js/vendor/jspdf.umd.min.js` |
 | `js/backup.js` | Google Drive backup (GIS token model, `drive.file`), backup reminder banners, "emails due" notifications |
 | `js/util.js` | Helpers: money/dates (AU FY), CSV, link encoding (deflate + base64url), signatures, icons |
 | `js/db.js` | IndexedDB storage, invoice maths, statuses, email templates/outbox logic, backup |
@@ -57,6 +58,12 @@ Live at https://joshtilley88-wq.github.io/invoicing/
 * Customer fields (invoice, contract, questionnaire, import answers) are a type-to-search picker over name, business, email and phone (digits only, `+61` = `0`), showing at most 60 matches at a time so it stays fast with hundreds of customers. **Add new customer** works inline, including inside modals.
 * The remaining-balance email is scheduled for the **due date** and moves with it (the queued outbox email too). Picking a different date on that invoice is an override (`balanceDateManual: true`) until **Use the due date** is tapped. Older invoices whose balance date already differed from the due date keep their date.
 * New invoices default to a **fixed $100 deposit** (Settings → Invoices & numbering: fixed amount or percentage). If a deposit % other than the old built-in 50% was saved, that percentage stays the default.
+
+## Email PDF
+* Invoice screen and View / Print: **Email PDF** (replaces the old text-only "Email invoice"). It makes an A4 PDF of the same formal invoice (logo, pink/lavender band, items, totals, payment details), named `Invoice INV-1234 - Business name.pdf`.
+* Phones (Web Share with files): **Share PDF** opens the share sheet with the PDF attached and the invoice email subject/message as title/text; choose Gmail. The To address is copied to the clipboard in case the app leaves it empty. Desktop (no file sharing): **Download PDF & open email** saves the PDF and opens the mailto email with To/subject/message; attach the PDF yourself.
+* **Mark as sent** works as before (outbox entry sent, invoice marked sent). Deposit, balance and receipt emails keep their text-only buttons and also get **Send with PDF** / **Email with PDF** (receipt PDFs match the printable receipt).
+* Works offline: the library is in the service worker cache. Built-in PDF fonts cover Western European characters; emoji and other scripts are left out of the PDF.
 
 ## Email-due notifications
 * When the app opens, if any queued emails are due today or overdue, it shows one system notification via the service worker ("2 invoice emails due today"), at most once a day. Tapping it opens the email outbox.

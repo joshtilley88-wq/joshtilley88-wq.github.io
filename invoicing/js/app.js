@@ -72,9 +72,11 @@ function openCompose(entry, opts = {}) {
   let ol = !!pdf && typeof outlookOn === 'function' && outlookOn(); const olOffer = !!pdf && !ol && typeof outlookEnabled === 'function' && outlookEnabled();
   let pdfBlob = null, pdfErr = null; const pdfP = pdf ? pdf.make().then(b => { pdfBlob = b; }, e => { pdfErr = e; console.warn('PDF failed', e); }) : null;
   const shareLbl = () => share ? (pdfOnly ? 'Share PDF' : 'Send with PDF') : (pdfOnly ? 'Download PDF &amp; open email' : 'Email with PDF');
-  const pdfLbl = () => `${icon(ol || share ? 'send' : 'download')} ${ol ? 'Open in Outlook with PDF' : shareLbl()}`;
-  const pdfBtn = pdf ? `<button class="btn ${pdfOnly ? 'out' : ''}" id="em-pdf">${pdfLbl()}</button>` : '';
-  const pdfNote = !pdf ? '' : ol ? `Tap <b>Open in Outlook with PDF</b>: a draft with the To address, this message and <b>${esc(pdf.name)}</b> attached opens in your Outlook (${esc(DEV.outlook.username || 'connected')}). Check it and press Send, then come back and tap <b>Mark as sent</b>.`
+  const pdfLbl = () => `${icon(ol ? 'link' : share ? 'send' : 'download')} ${ol ? 'Open in Outlook' : shareLbl()}`;
+  const already = () => entry.status === 'sent' || entry.sendState === 'sent';
+  const pdfBtn = pdf ? `<button class="btn ${pdfOnly && !ol ? 'out' : ''}" id="em-pdf">${pdfLbl()}</button>` : '';
+  const sendBtn = ol ? `<button class="btn pri" id="em-send" ${already() ? 'disabled' : ''}>${icon('send')} ${already() ? 'Already sent' : 'Send now'}</button>` : '';
+  const pdfNote = !pdf ? '' : ol ? `Check the email above, then tap <b>Send now</b> to send it from your Outlook (${esc(DEV.outlook.username || 'connected')}) with <b>${esc(pdf.name)}</b> attached. It's marked as sent automatically. To change it in Outlook first, tap <b>Open in Outlook</b>.`
     : share ? `Tap <b>${pdfOnly ? 'Share PDF' : 'Send with PDF'}</b> and choose Gmail (or your email app): it opens with <b>${esc(pdf.name)}</b> attached and the message filled in. Add the To address if it's empty (it's copied for you). Then come back and tap <b>Mark as sent</b>.`
     : `<b>${pdfOnly ? 'Download PDF &amp; open email' : 'Email with PDF'}</b> saves <b>${esc(pdf.name)}</b> to your downloads and opens your email app with the message filled in. Attach the PDF, send it, then come back and tap <b>Mark as sent</b>.`;
   const olTip = olOffer ? ' <span class="tiny">Tip: connect Outlook in Settings → Data to get a ready-made draft with the PDF attached.</span>' : '';
@@ -84,20 +86,23 @@ function openCompose(entry, opts = {}) {
       <label class="f">To<input type="email" id="em-to" value="${esc(m0.to)}" placeholder="client@example.com"></label>
       <label class="f">Subject<input type="text" id="em-sub" value="${esc(m0.subject)}"></label>
       <label class="f">Message<textarea id="em-body" style="min-height:260px">${esc(m0.body)}</textarea></label>
-      <div class="note" id="em-note">${pdfOnly ? pdfNote + olTip : `Opens your email app with everything filled in.${pdf ? ' ' + pdfNote + olTip : ' Then come back and tap <b>Mark as sent</b>.'}`}</div>
+      ${pdf ? `<div class="small" id="em-att">${icon('file')} Attachment: <b>${esc(pdf.name)}</b> <span class="muted" id="em-att-size"></span></div>` : ''}
+      <div class="note" id="em-note">${opts.resumed ? '<b>Outlook reconnected.</b> Check the email, then tap <b>Send now</b>. ' : ''}${pdfOnly || ol ? pdfNote + olTip : `Opens your email app with everything filled in.${pdf ? ' ' + pdfNote + olTip : ' Then come back and tap <b>Mark as sent</b>.'}`}</div>
+      <div class="note pink" id="em-confirm" hidden></div>
     </div>`,
     foot: `${entry.id ? `<button class="btn ghost" id="em-skip">Skip / dismiss</button>` : ''}<div class="spacer"></div>
       <button class="btn" id="em-copy">${icon('copy')} Copy email</button>
       ${pdfOnly ? '' : `<a class="btn" id="em-gmail" target="_blank" rel="noopener">Open in Gmail</a>
-      <a class="btn out" id="em-open">${icon('send')} Open in email app</a>`}${pdfBtn}
-      <button class="btn pri" id="em-sent">${icon('check')} Mark as sent</button>`,
+      <a class="btn ${ol ? '' : 'out'}" id="em-open">${icon('send')} Open in email app</a>`}${pdfBtn}
+      <button class="btn ${ol ? '' : 'pri'}" id="em-sent">${icon('check')} Mark as sent</button>${sendBtn}`,
   });
   const val = () => ({ to: $('#em-to', m).value.trim(), subject: $('#em-sub', m).value, body: $('#em-body', m).value });
-  const upd = () => { if (pdfOnly) return; const v = val(); const u = mailtoURL(v.to, v.subject, v.body); $('#em-open', m).href = u; $('#em-gmail', m).href = gmailURL(v.to, v.subject, v.body);
+  const upd = () => { if (pdfOnly || ol) return; const v = val(); const u = mailtoURL(v.to, v.subject, v.body); $('#em-open', m).href = u; $('#em-gmail', m).href = gmailURL(v.to, v.subject, v.body);
     $('#em-note', m).classList.toggle('pink', u.length > 1900); if (u.length > 1900) $('#em-note', m).innerHTML = 'This email is long. Some desktop email apps cut off very long mailto links, so if the text looks cut off, use <b>Copy email</b> and paste it instead. Gmail usually handles it fine.'; };
   m.addEventListener('input', upd); upd();
   $('#em-copy', m).onclick = async () => { const v = val(); toast(await copyText(`To: ${v.to}\nSubject: ${v.subject}\n\n${v.body}`) ? 'Email copied' : 'Copy failed'); };
-  let draft = null;
+  if (pdfP) pdfP.then(() => { const z = $('#em-att-size', m); if (z && pdfBlob) z.textContent = `(${Math.max(1, Math.round(pdfBlob.size / 1024))} KB)`; });
+  let draft = entry.draftId && entry.draftLink ? { id: entry.draftId, webLink: entry.draftLink } : null, draftFor = draft ? JSON.stringify([entry.to || m0.to, m0.subject, m0.body]) : '';
   const openDraft = () => { const w = window.open(draft.webLink, '_blank'); if (w) { try { w.opener = null; } catch (x) { } } return !!w; };
   if (pdf) $('#em-pdf', m).onclick = async e => {
     const btn = e.currentTarget, v = val();
@@ -113,17 +118,18 @@ function openCompose(entry, opts = {}) {
       why = !navigator.onLine ? 'You\'re offline' : OL.needReconnect ? 'Outlook needs reconnecting (Settings → Data)' : '';
       if (!why) {
         const lbl = btn.innerHTML; btn.disabled = true; btn.textContent = 'Creating Outlook draft…'; let err = null;
-        try { draft = await outlookDraft({ to: v.to, subject: v.subject, body: v.body, name: pdf.name, blob: pdfBlob }); } catch (x) { err = x; console.warn('Outlook draft', x); }
+        try { draft = await outlookDraft({ to: v.to, subject: v.subject, body: v.body, name: pdf.name, blob: pdfBlob }); draftFor = JSON.stringify([v.to, v.subject, v.body]); } catch (x) { err = x; console.warn('Outlook draft', x); }
         btn.disabled = false; btn.innerHTML = lbl;
         if (draft) {
+          if (entry.id) { entry.draftId = draft.id; entry.draftLink = draft.webLink; await persist(null); }   // so Send now later reuses it
           const opened = openDraft();
           btn.innerHTML = `${icon('send')} Open draft in Outlook`;
           toast('Draft ready in Outlook with the PDF attached');
-          done(`Draft ready in Outlook${v.to ? ` to <b>${esc(v.to)}</b>` : ''} with <b>${esc(pdf.name)}</b> attached.${opened ? '' : ' Tap <b>Open draft in Outlook</b> to open it.'} Check it and press Send, then tap <b>Mark as sent</b>.`);
+          done(`Draft ready in Outlook${v.to ? ` to <b>${esc(v.to)}</b>` : ''} with <b>${esc(pdf.name)}</b> attached.${opened ? '' : ' Tap <b>Open draft in Outlook</b> to open it.'} Send it there and then tap <b>Mark as sent</b>, or come back and tap <b>Send now</b>.`);
           return;
         }
         why = err && err.kind === 'auth' ? 'Outlook needs reconnecting (Settings → Data)' : 'Outlook didn\'t work: ' + (err && err.message || 'unknown error');
-        ol = false; btn.innerHTML = pdfLbl();
+        ol = false; btn.innerHTML = pdfLbl(); const sb = $('#em-send', m); if (sb) sb.hidden = true;
         if (share) {   // the share sheet needs a fresh tap after waiting on the network
           toast(`${why}. Tap ${shareLbl()} to share the PDF instead`);
           done(`${esc(why)}. Tap <b>${shareLbl()}</b> to share the PDF another way, then tap <b>Mark as sent</b>.`);
@@ -151,11 +157,72 @@ function openCompose(entry, opts = {}) {
     if (!e.scheduledDate) e.scheduledDate = today();
     await save('outbox', e);
   };
-  $('#em-sent', m).onclick = async () => {
+  const finishSent = async msg => {
     await persist('sent');
     if (inv && !inv.sent && ['deposit', 'balance', 'invoice'].includes(entry.type)) { inv.sent = true; inv.sentAt = today(); await save('invoices', inv); }
     if (entry.type === 'contract') { const k = byId('contracts', entry.contractId); if (k && k.status === 'draft') { k.status = 'sent'; k.sentAt = today(); await save('contracts', k); } }
-    closeModal(); toast('Marked as sent'); opts.onSent ? opts.onSent() : render();
+    closeModal(); toast(msg || 'Marked as sent'); opts.onSent ? opts.onSent() : render();
+  };
+  $('#em-sent', m).onclick = () => finishSent();
+  // ---- Send now: straight from her Outlook (Mail.Send), only after she taps Send now AND confirms
+  let sending = false;
+  const cf = $('#em-confirm', m), sendB = $('#em-send', m);
+  { const f = $('.modal-f', m); cf.style.cssText = 'flex-basis:100%;margin:0 0 4px'; f.insertBefore(cf, f.firstChild); }   // in the sticky footer: always on screen
+  const okAddr = to => { const a = to.split(/[,;]/).map(x => x.trim()).filter(Boolean); return a.length > 0 && a.every(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)); };
+  const failNote = (msg, consent, kind) => {
+    cf.hidden = false; cf.innerHTML = `${icon('alert')} Not sent: ${esc(msg)}.${kind === 'gone' || kind === 'network' ? '' : ' Nothing went to the client.'}${consent || kind === 'gone' ? '' : ' You can try again, or tap <b>Open in Outlook</b> to send it from there.'}
+      ${consent ? `<div class="row" style="margin-top:10px"><button class="btn pri sm" id="em-recon">${icon('link')} Reconnect Outlook to allow sending</button></div>` : ''}`;
+    const rb = $('#em-recon', m); if (rb) rb.onclick = async () => { rb.disabled = true; rb.textContent = 'Opening Microsoft sign-in…'; const v = val();
+      try { await outlookReconnectForSend(Object.assign({}, entry, { to: v.to, subject: v.subject, body: v.body })); } catch (x) { rb.disabled = false; toast('Couldn\'t start Microsoft sign-in: ' + (x.message || x)); } };
+    cf.scrollIntoView({ block: 'nearest' });
+  };
+  const doSend = async () => {
+    if (sending) return;
+    if (already()) { toast('Already sent'); return; }
+    sending = true; const btns = [...m.querySelectorAll('.modal-f button, #em-confirm button')]; btns.forEach(b => b.disabled = true); sendB.textContent = 'Sending…';
+    cf.innerHTML = `${icon('send')} Sending from your Outlook…`;
+    let ok = false;
+    try {
+      if (!navigator.onLine) throw new OutlookError('you\'re offline', 'offline');
+      if (!pdfBlob && !pdfErr) await pdfP; if (!pdfBlob) throw new OutlookError('the PDF couldn\'t be made', 'graph');
+      const token = await olSendToken(); const v = val();
+      let id = draft && draft.id;
+      if (id && await outlookDraftState(token, id) === 'gone') {
+        if (entry.sendState === 'sending') { entry.sendState = 'sent'; entry.sentVia = 'outlook'; ok = true; await finishSent('Already sent from ' + (DEV.outlook.username || 'Outlook')); return; }   // an earlier try went through after all
+        // she sent (or deleted) that draft in Outlook herself: don't risk sending it twice
+        draft = null; entry.draftId = ''; entry.draftLink = ''; if (entry.id) await persist(null);
+        throw new OutlookError('that Outlook draft was already sent or deleted in Outlook. If you sent it there, tap Mark as sent; otherwise tap Send now again to send a fresh copy', 'gone');
+      }
+      if (id && draftFor !== JSON.stringify([v.to, v.subject, v.body])) await outlookPatchDraft(token, id, v);
+      if (!id) { draft = await outlookDraft({ to: v.to, subject: v.subject, body: v.body, name: pdf.name, blob: pdfBlob, token }); id = draft.id; }
+      draftFor = JSON.stringify([v.to, v.subject, v.body]);
+      entry.draftId = id; entry.draftLink = draft.webLink; entry.sendState = 'sending'; await persist(null);   // a retry checks the draft before sending again
+      try { await outlookSendMessage(token, id); }
+      catch (x) { if (x.kind !== 'network') { entry.sendState = ''; await persist(null); } throw x; }   // network: unknown whether it went, keep 'sending'
+      entry.sendState = 'sent'; entry.sentVia = 'outlook'; ok = true;
+      await finishSent('Sent from ' + (DEV.outlook.username || 'Outlook'));
+    } catch (x) {
+      console.warn('Send now', x);
+      const consent = x.kind === 'consent';
+      failNote(consent ? 'Outlook needs your OK to send emails from the app' : x.kind === 'offline' ? 'you\'re offline' : x.kind === 'auth' ? 'Outlook needs reconnecting (Settings → Data)' : x.kind === 'network' ? 'the connection dropped before Outlook answered, so it may not have gone. Tap Send now again to check' : (x.message || 'unknown error'), consent, x.kind);
+      toast(consent ? 'Reconnect Outlook to allow sending' : x.kind === 'gone' ? 'Not sent: that draft was already sent or deleted in Outlook' : 'Not sent: ' + (x.message || 'unknown error'));
+      if (draft) $('#em-pdf', m).innerHTML = `${icon('link')} Open draft in Outlook`;
+    } finally {
+      sending = false;
+      if (!ok) { btns.forEach(b => b.disabled = false); sendB.innerHTML = `${icon('send')} Send now`; }
+    }
+  };
+  if (sendB) sendB.onclick = () => {
+    if (sending) return; if (already()) { toast('Already sent'); return; }
+    const v = val();
+    if (!okAddr(v.to)) { toast('Add the client\'s email address in To first'); $('#em-to', m).focus(); return; }
+    if (!navigator.onLine) { toast('You\'re offline. Use ' + (share ? shareLbl() : shareLbl().replace('&amp;', '&')) + ' instead, or try again when you\'re online'); ol = false; $('#em-pdf', m).innerHTML = pdfLbl(); return; }
+    cf.hidden = false;
+    cf.innerHTML = `<b>Send to ${esc(v.to)} now?</b><div class="small" style="margin:4px 0 10px">“${esc(v.subject)}” with <b>${esc(pdf.name)}</b> attached, from ${esc(DEV.outlook.username || 'your Outlook')}.</div>
+      <div class="row"><button class="btn ghost sm" id="em-cf-no">Cancel</button><button class="btn pri sm" id="em-cf-yes">${icon('send')} Send</button></div>`;
+    $('#em-cf-no', m).onclick = () => { cf.hidden = true; cf.innerHTML = ''; };
+    $('#em-cf-yes', m).onclick = doSend;
+    cf.scrollIntoView({ block: 'nearest' });
   };
   const sk = $('#em-skip', m); if (sk) sk.onclick = async () => { await persist('skipped'); closeModal(); toast('Dismissed'); render(); };
   return m;
@@ -191,10 +258,15 @@ async function boot() {
     history.replaceState(null, '', location.pathname + location.search + '#/settings?tab=cloud');
     try { await cloudAuthFromHash(h); setTimeout(() => toast('Signed in'), 300); } catch (e) { setTimeout(() => toast(e.message), 300); }
   }
-  if (typeof outlookAfterRedirect === 'function') { const msg = await outlookAfterRedirect(); if (msg) setTimeout(() => toast(msg), 300); }   // back from Microsoft sign-in
+  let olMsg = ''; if (typeof outlookAfterRedirect === 'function') { olMsg = await outlookAfterRedirect(); if (olMsg) setTimeout(() => toast(olMsg), 300); }   // back from Microsoft sign-in
   try { await tidyOutbox(); } catch (e) { console.warn('tidy outbox', e); }   // paid-up deposit/balance emails + old receipts out of "Due now"
   window.addEventListener('hashchange', () => { if (/^#(sign|q)=/.test(location.hash)) { location.reload(); return; } render(); });
+  // back from "Reconnect Outlook to allow sending": return to the page she was on and reopen the email (she still taps Send now herself)
+  const re = typeof outlookTakeResume === 'function' ? outlookTakeResume() : null, resume = re && /^Outlook connected/.test(olMsg);
+  if (resume && re._back && re._back !== location.hash) history.replaceState(null, '', location.pathname + location.search + re._back);
+  if (re) delete re._back;
   await render();
+  if (resume) openCompose(re, { resumed: true });   // reopen the email she was sending; she still taps Send now herself
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });
   // background jobs: Drive auto-backup + due-email notification, on open and whenever the app comes back to the front
   const wake = () => { autoBackup().catch(() => { }); dueNotifyCheck().catch(() => { }); if (syncOn()) syncNow('focus').catch(() => { }); };

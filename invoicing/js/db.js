@@ -175,16 +175,46 @@ async function syncInvoiceEmails(inv) {
     if (e.status !== 'sent' && (!e.id || e.scheduledDate !== date || e.customerId !== inv.customerId)) { e.scheduledDate = date; e.customerId = inv.customerId; await save('outbox', e); }
   }
   for (const e of S.outbox.filter(x => x.invoiceId === inv.id && x.status !== 'sent' && ((x.type === 'deposit' && inv.emailDeposit === false) || (x.type === 'balance' && inv.emailBalance === false)))) await remove('outbox', e.id);
+  await settleInvoiceEmails(inv);
 }
-/* an email is "done" if sent, or if it's a deposit/balance email whose money is already in */
+/* has the money a deposit / balance email asks for already come in? */
+function emailPaidFor(e, inv) {
+  if (!inv || (e.type !== 'deposit' && e.type !== 'balance')) return false;
+  const c = invCalc(inv); if (c.balance <= 0.004) return true;
+  return e.type === 'deposit' && c.paid >= depositAmount(inv, c) - 0.004;
+}
+/* an email is "done" if sent or skipped, or if it's a deposit/balance email whose money is already in */
 function emailObsolete(e) {
   if (e.status === 'sent' || e.status === 'skipped') return true;
   const inv = e.invoiceId && byId('invoices', e.invoiceId); if (e.invoiceId && !inv) return true;
-  if (inv && (e.type === 'deposit' || e.type === 'balance')) { const c = invCalc(inv); if (c.balance <= 0.004) return true; if (e.type === 'deposit' && c.paid >= depositAmount(inv, c) - 0.004) return true; }
-  return false;
+  return emailPaidFor(e, inv);
 }
+/* receipts are optional thank-yous: never "due", never overdue, never in the badge or the notification */
+const isReceipt = e => e.type === 'receipt';
 const outboxActive = () => S.outbox.filter(e => !emailObsolete(e)).sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
-const outboxDue = () => outboxActive().filter(e => (e.scheduledDate || '') <= today());
+const outboxDue = () => outboxActive().filter(e => !isReceipt(e) && (e.scheduledDate || '') <= today());
+const outboxReceipts = () => outboxActive().filter(isReceipt);
+/* once the money is in, queued deposit / balance emails for that invoice are cleared (skipped, reason 'paid').
+ * If a payment is deleted or the total goes up, they come back. */
+async function settleInvoiceEmails(inv) {
+  if (!inv || !inv.id) return 0; let n = 0;
+  for (const e of S.outbox.filter(x => x.invoiceId === inv.id && (x.type === 'deposit' || x.type === 'balance'))) {
+    const paid = emailPaidFor(e, inv);
+    if ((!e.status || e.status === 'queued') && paid) { e.status = 'skipped'; e.skipReason = 'paid'; e.skippedAt = new Date().toISOString(); await save('outbox', e); n++; }
+    else if (e.status === 'skipped' && e.skipReason === 'paid' && !paid) { e.status = 'queued'; delete e.skipReason; delete e.skippedAt; await save('outbox', e); n++; }
+  }
+  return n;
+}
+/* on app open: clear paid-up deposit/balance emails, and move receipt emails left over from an earlier day out of the
+ * outbox (marked skipped, never deleted; they can still be emailed from the payment's receipt button) */
+async function tidyOutbox() {
+  let n = 0; const t = today();
+  for (const inv of S.invoices.filter(i => S.outbox.some(e => e.invoiceId === i.id && (e.type === 'deposit' || e.type === 'balance')))) n += await settleInvoiceEmails(inv);
+  for (const e of S.outbox.filter(x => isReceipt(x) && (!x.status || x.status === 'queued') && byId('payments', x.paymentId) && ((x.createdAt || '').slice(0, 10) || x.scheduledDate || t) < t && (x.scheduledDate || '') < t)) {
+    e.status = 'skipped'; e.skipReason = 'old-receipt'; e.skippedAt = new Date().toISOString(); await save('outbox', e); n++;
+  }
+  return n;
+}
 
 /* ---------- backup ---------- */
 async function exportBackup() {

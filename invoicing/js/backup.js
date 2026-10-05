@@ -275,7 +275,7 @@ function driveCardHTML() {
 function notifyCardHTML() {
   const sup = 'Notification' in window && 'serviceWorker' in navigator;
   const p = sup ? Notification.permission : 'unsupported';
-  return `<div class="card" id="nt-card"><h2>Email reminders</h2><p class="small muted">Get a notification on this device when invoice emails are due (checked when you open the app, at most once a day).</p>
+  return `<div class="card" id="nt-card"><h2>Email reminders</h2><p class="small muted">Get a notification on this device when deposit or balance emails are ready to send (checked when you open the app, at most once a day). Receipts never trigger it.</p>
     <p class="small">${p === 'granted' ? '<b>● Notifications are on</b>' : p === 'denied' ? 'Notifications are blocked for this site. Allow them in your browser or phone settings.' : p === 'unsupported' ? 'This browser can\'t show notifications. On iPhone, add the app to your Home Screen first.' : ''}</p>
     ${p === 'default' ? `<button class="btn pri" id="nt-on">${icon('mail')} Turn on email reminders</button>` : ''}</div>`;
 }
@@ -293,9 +293,12 @@ function bindDataCards(root) {
 }
 
 /* ---------- due-email notifications ---------- */
-function dueNotifyText(due, t = today()) {
-  const n = due.length, over = due.filter(e => (e.scheduledDate || '') < t).length;
-  return { title: `${n} invoice email${n === 1 ? '' : 's'} due today`, body: (over ? `${over} overdue. ` : '') + 'Tap to open your email outbox.' };
+/* notification for emails that need sending (deposit / balance requests etc., never receipts). Says what to send, never
+ * mentions amounts or "overdue", so it can't read as money owing. */
+function dueNotifyText(due) {
+  const n = due.length;
+  const what = due.slice(0, 3).map(e => { const inv = e.invoiceId && byId('invoices', e.invoiceId); return (EMAIL_LABEL[e.type] || 'Email') + (inv ? ' for ' + inv.number : ''); });
+  return { title: `${n} email${n === 1 ? '' : 's'} ready to send`, body: (what.length ? what.join(', ') + (n > 3 ? ` and ${n - 3} more` : '') + '. ' : '') + 'Tap to open your email outbox.' };
 }
 async function swReg() {
   if (!('serviceWorker' in navigator)) return null;

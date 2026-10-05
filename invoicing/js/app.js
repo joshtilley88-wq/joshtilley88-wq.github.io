@@ -192,6 +192,7 @@ async function boot() {
     try { await cloudAuthFromHash(h); setTimeout(() => toast('Signed in'), 300); } catch (e) { setTimeout(() => toast(e.message), 300); }
   }
   if (typeof outlookAfterRedirect === 'function') { const msg = await outlookAfterRedirect(); if (msg) setTimeout(() => toast(msg), 300); }   // back from Microsoft sign-in
+  try { await tidyOutbox(); } catch (e) { console.warn('tidy outbox', e); }   // paid-up deposit/balance emails + old receipts out of "Due now"
   window.addEventListener('hashchange', () => { if (/^#(sign|q)=/.test(location.hash)) { location.reload(); return; } render(); });
   await render();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => { });

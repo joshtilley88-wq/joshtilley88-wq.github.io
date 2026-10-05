@@ -219,7 +219,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--pink); width: 18px
   .modal { border-radius: 22px 22px 0 0; max-height: 94vh; } .modal-bg { align-items: flex-end; padding: 0; }
   .search { max-width: none; }
   .g-stats { grid-template-columns: 1fr 1fr; gap: 12px !important; } .g-stats .stat .v { font-size: 19px; }
-  .ob { flex-wrap: wrap; } .ob .grow { flex-basis: calc(100% - 60px); } .ob .btn { margin-left: 54px; }
+  .ob { flex-wrap: wrap; } .ob .grow { flex-basis: calc(100% - 60px); } .ob .btn { margin-left: 54px; } .ob .btn + .btn { margin-left: 0; }
   input, select, textarea { font-size: 16px !important; }
   .card { padding: 16px; } .page-h { margin-bottom: 16px; }
 }

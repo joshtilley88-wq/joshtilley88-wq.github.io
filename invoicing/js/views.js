@@ -74,20 +74,28 @@ const demoBanner = () => S.settings.demo ? `<div class="note pink no-print" styl
 /* ======================= DASHBOARD ======================= */
 function outboxRow(e, compact = false) {
   const inv = e.invoiceId && byId('invoices', e.invoiceId); const cu = byId('customers', e.customerId || inv?.customerId);
-  const late = (e.scheduledDate || '') < today(), due = (e.scheduledDate || '') <= today();
+  const rc = isReceipt(e), late = !rc && (e.scheduledDate || '') < today(), due = !rc && (e.scheduledDate || '') <= today();
   const ic = { deposit: ['dollar', ''], balance: ['clock', 'lav'], receipt: ['receipt', 'ok'], contract: ['pen', 'lav'], questionnaire: ['clip', ''], invoice: ['file', ''] }[e.type] || ['mail', ''];
   let amt = '';
-  if (inv && e.type === 'deposit') amt = money(depositAmount(inv)); else if (inv && e.type === 'balance') amt = money(invCalc(inv).balance);
-  else if (e.type === 'receipt') { const p = byId('payments', e.paymentId); if (p) amt = money(p.amount); }
-  return `<div class="ob ${late ? 'late' : due ? 'due' : ''}"><span class="ic ${late ? 'bad' : ic[1]}">${icon(ic[0])}</span>
+  if (inv && e.type === 'deposit') { const c = invCalc(inv); amt = money(Math.max(0, depositAmount(inv, c) - c.paid)); } else if (inv && e.type === 'balance') amt = money(invCalc(inv).balance);
+  else if (rc) { const p = byId('payments', e.paymentId); if (p) amt = money(p.amount) + ' paid'; }
+  // wording is about sending the email, never about money owing
+  const when = rc ? 'Send a receipt? (optional)' : late ? `<b style="color:var(--pink-d)">ready to send</b> · was scheduled for ${fmtD(e.scheduledDate)}` : due ? '<b style="color:var(--pink-d)">send today</b>' : 'scheduled ' + fmtD(e.scheduledDate);
+  return `<div class="ob ${due ? 'due' : ''}" data-ob="${e.id}"><span class="ic ${ic[1]}">${icon(ic[0])}</span>
     <div class="grow"><div class="t" style="font-weight:600">${esc(EMAIL_LABEL[e.type] || 'Email')}${inv ? ' · ' + esc(inv.number) : ''} ${amt ? `<span class="num">· ${amt}</span>` : ''}</div>
-    <div class="s small muted">${esc(custName(cu))} · ${late ? `<b style="color:var(--bad)">overdue since ${fmtD(e.scheduledDate)}</b>` : due ? '<b style="color:var(--pink-d)">due today</b>' : 'scheduled ' + fmtD(e.scheduledDate)}</div></div>
-    <button class="btn ${due ? 'pri' : ''} sm" data-act="send-email" data-id="${e.id}">${icon('send')} ${compact ? 'Send' : 'Open & send'}</button></div>`;
+    <div class="s small muted">${esc(custName(cu))} · ${when}</div></div>
+    <button class="btn ghost sm" data-act="skip-email" data-id="${e.id}" title="Skip: take it off the list without sending">Skip</button>
+    <button class="btn ${due ? 'pri' : ''} sm" data-act="send-email" data-id="${e.id}">${icon('send')} ${rc ? 'Send receipt' : compact ? 'Send' : 'Open & send'}</button></div>`;
 }
+ACT['skip-email'] = async el => {
+  const e = byId('outbox', el.dataset.id); if (!e) return;
+  e.status = 'skipped'; e.skipReason = 'manual'; e.skippedAt = new Date().toISOString(); await save('outbox', e);
+  toast(isReceipt(e) ? 'Receipt skipped' : 'Skipped. It\'s under Sent & skipped if you need it'); render();
+};
 ACT['send-email'] = el => { const e = byId('outbox', el.dataset.id); if (e) openCompose(e); };
 
 V.dashboard = async view => {
-  const t = today(), due = outboxDue(), soon = outboxActive().filter(e => e.scheduledDate > t && e.scheduledDate <= addDays(t, 7));
+  const t = today(), due = outboxDue(), soon = outboxActive().filter(e => !isReceipt(e) && e.scheduledDate > t && e.scheduledDate <= addDays(t, 7));
   const invs = S.invoices.filter(i => i.kind !== 'quote');
   let outstanding = 0, overdueAmt = 0, overdueN = 0;
   for (const i of invs) { const c = invCalc(i); const st = invStatus(i, c); if (st !== 'draft' && c.balance > 0) outstanding += c.balance; if (st === 'overdue') { overdueAmt += c.balance; overdueN++; } }
@@ -101,7 +109,7 @@ V.dashboard = async view => {
   const name = S.settings.business.name;
   view.innerHTML = `${demoBanner()}${notifyPromptHTML()}${pageH(`Hi${name ? ', ' + esc(name) : ''}`, new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), `<a class="btn pri" href="#/invoice/new">${icon('plus')} New invoice</a>`)}
   <div class="card alert-card" style="margin-bottom:18px">
-    <div class="card-h"><span class="ic">${icon('mail')}</span><div><h2>Emails to send ${due.length ? `<span class="badge ${due.some(e => e.scheduledDate < t) ? 'bad' : ''}">${due.length}</span>` : ''}</h2><div class="small muted">Due today or overdue. Open each one, send it, then mark it sent.</div></div><div class="spacer"></div><a class="btn ghost sm" href="#/outbox">View outbox</a></div>
+    <div class="card-h"><span class="ic">${icon('mail')}</span><div><h2>Emails to send ${due.length ? `<span class="badge">${due.length}</span>` : ''}</h2><div class="small muted">Ready to send today. Open each one, send it, then mark it sent (or Skip it).</div></div><div class="spacer"></div><a class="btn ghost sm" href="#/outbox">View outbox</a></div>
     ${due.length ? due.map(e => outboxRow(e)).join('') : `<div class="empty" style="padding:14px">${icon('check')} All caught up. Nothing due today.</div>`}
     ${soon.length ? `<div class="small muted" style="margin:14px 0 8px;font-weight:600">Coming up in the next 7 days</div>${soon.map(e => outboxRow(e, true)).join('')}` : ''}
   </div>
@@ -326,7 +334,9 @@ ACT['del-invoice'] = async el => {
 ACT['email-pdf'] = el => { const inv = byId('invoices', el.dataset.id); openCompose({ type: 'invoice', invoiceId: inv.id, customerId: inv.customerId, status: 'queued', scheduledDate: today(), createdAt: new Date().toISOString() }); };
 ACT['del-payment'] = async el => {
   const p = byId('payments', el.dataset.id); if (!await confirmBox(`Delete the payment of ${money(p.amount)} on ${fmtD(p.date)}?`)) return;
-  await remove('payments', p.id); for (const e of S.outbox.filter(e => e.paymentId === p.id && e.status !== 'sent')) await remove('outbox', e.id); toast('Payment deleted'); render();
+  await remove('payments', p.id); for (const e of S.outbox.filter(e => e.paymentId === p.id && e.status !== 'sent')) await remove('outbox', e.id);
+  await settleInvoiceEmails(byId('invoices', p.invoiceId));   // money no longer in: its deposit / balance emails come back
+  toast('Payment deleted'); render();
 };
 
 /* ---------- payments + receipts ---------- */
@@ -343,19 +353,19 @@ function recordPaymentModal(inv) {
     const amount = r2(num($('#pm-amt', m).value)); if (!(amount > 0)) { toast('Enter an amount'); return; }
     const p = await save('payments', { invoiceId: inv.id, amount, date: $('#pm-date', m).value || today(), method: $('#pm-meth', m).value, note: $('#pm-note', m).value, createdAt: new Date().toISOString() });
     if (!inv.sent) { inv.sent = true; await save('invoices', inv); }
-    const e = await save('outbox', { type: 'receipt', invoiceId: inv.id, customerId: inv.customerId, paymentId: p.id, status: 'queued', scheduledDate: p.date > today() ? p.date : today(), createdAt: new Date().toISOString() });
-    closeModal(); paymentDoneModal(p, e);
+    await settleInvoiceEmails(inv);   // deposit / balance emails for money that's now in are cleared
+    closeModal(); paymentDoneModal(p);
   };
 }
-function paymentDoneModal(p, e) {
+function paymentDoneModal(p) {
   const inv = byId('invoices', p.invoiceId); const c = invCalc(inv);
   const m = openModal({ title: 'Payment recorded', body: `<div style="text-align:center;padding:10px 0 4px"><span class="ic ok" style="width:64px;height:64px;margin:0 auto">${icon('check')}</span>
-    <div style="font-size:28px;font-weight:750;margin-top:12px" class="num">${money(p.amount)}</div><div class="muted">${esc(inv.number)} · balance now <b>${money(c.balance)}</b> (${invStatus(inv, c).replace('-', ' ')})</div>
-    <p>Send the receipt email now? It's also waiting in your outbox if you'd rather do it later.</p></div>`,
-    foot: `<button class="btn ghost" id="pd-later">Later</button><button class="btn" id="pd-print">${icon('printer')} Print receipt</button><button class="btn pri" id="pd-send">${icon('send')} Send receipt email</button>`, onClose: () => render() });
-  $('#pd-later', m).onclick = () => closeModal();
+    <div style="font-size:28px;font-weight:750;margin-top:12px" class="num">${money(p.amount)}</div><div class="muted">${esc(inv.number)} · ${c.balance > 0.004 ? `balance now <b>${money(c.balance)}</b>` : '<b>paid in full</b>'}</div>
+    <p id="pd-q"><b>Send a receipt now?</b></p></div>`,
+    foot: `<button class="btn ghost" id="pd-skip">Skip</button><button class="btn" id="pd-print">${icon('printer')} Print receipt</button><button class="btn pri" id="pd-send">${icon('send')} Send receipt</button>`, onClose: () => render() });
+  $('#pd-skip', m).onclick = () => { closeModal(); toast('No receipt sent. You can still email one from the payment\'s receipt button'); };
   $('#pd-print', m).onclick = () => printHTML(receiptDoc(p));
-  $('#pd-send', m).onclick = () => { m._onClose = null; openCompose(e); };
+  $('#pd-send', m).onclick = async () => { m._onClose = null; const e = await save('outbox', { type: 'receipt', invoiceId: inv.id, customerId: inv.customerId, paymentId: p.id, status: 'queued', scheduledDate: today(), createdAt: new Date().toISOString() }); openCompose(e); };
 }
 ACT['receipt-menu'] = el => {
   const p = byId('payments', el.dataset.id); const e = S.outbox.find(x => x.paymentId === p.id);
@@ -562,17 +572,19 @@ function editExpenseModal(x) {
 /* ======================= OUTBOX ======================= */
 V.outbox = async (view, _, q) => {
   const tab = q.get('t') || 'todo';
-  const act = outboxActive(), sent = S.outbox.filter(e => e.status === 'sent').sort((a, b) => (b.sentAt || '').localeCompare(a.sentAt || ''));
-  const due = act.filter(e => e.scheduledDate <= today()), later = act.filter(e => e.scheduledDate > today());
+  const act = outboxActive().filter(e => !isReceipt(e)), rcs = outboxReceipts(), done = S.outbox.filter(e => e.status === 'sent' || e.status === 'skipped').sort((a, b) => (b.sentAt || b.skippedAt || '').localeCompare(a.sentAt || a.skippedAt || ''));
+  const due = act.filter(e => (e.scheduledDate || '') <= today()), later = act.filter(e => (e.scheduledDate || '') > today());
   view.innerHTML = `${pageH('Email outbox', 'Scheduled emails. This site can\'t send email by itself, so each one opens ready to send in your email app.')}
-  <div class="tabs"><button data-t="todo" class="${tab === 'todo' ? 'on' : ''}">To send (${act.length})</button><button data-t="sent" class="${tab === 'sent' ? 'on' : ''}">Sent (${sent.length})</button><button data-t="tpl" class="${tab === 'tpl' ? 'on' : ''}">Templates</button></div>
+  <div class="tabs"><button data-t="todo" class="${tab === 'todo' ? 'on' : ''}">To send (${act.length})</button><button data-t="sent" class="${tab === 'sent' ? 'on' : ''}">Sent &amp; skipped (${done.length})</button><button data-t="tpl" class="${tab === 'tpl' ? 'on' : ''}">Templates</button></div>
   <div id="ob-body"></div>`;
   $$('.tabs button', view).forEach(b => b.onclick = () => go('outbox?t=' + b.dataset.t));
   const body = $('#ob-body');
-  if (tab === 'todo') body.innerHTML = `<div class="card"><h2 style="margin-bottom:12px">Due now <span class="badge">${due.length}</span></h2>${due.map(e => outboxRow(e)).join('') || '<div class="empty">Nothing due. 🎉</div>'}</div>
+  const why = e => e.status === 'sent' ? 'sent ' + fmtD((e.sentAt || '').slice(0, 10)) : (e.skipReason === 'paid' ? 'not needed, paid ' : e.skipReason === 'old-receipt' ? 'receipt not sent, tidied ' : 'skipped ') + fmtD((e.skippedAt || '').slice(0, 10));
+  if (tab === 'todo') body.innerHTML = `<div class="card" id="ob-due"><h2 style="margin-bottom:12px">Due now <span class="badge">${due.length}</span></h2>${due.map(e => outboxRow(e)).join('') || '<div class="empty">Nothing due. 🎉</div>'}</div>
+    ${rcs.length ? `<div class="card" id="ob-rc" style="margin-top:18px"><h2 style="margin-bottom:4px">Receipts</h2><div class="small muted" style="margin-bottom:12px">Optional thank-you emails for payments you've recorded. Nothing is owing.</div>${rcs.map(e => outboxRow(e, true)).join('')}</div>` : ''}
     <div class="card" style="margin-top:18px"><h2 style="margin-bottom:12px">Scheduled</h2>${later.map(e => outboxRow(e, true)).join('') || '<div class="empty">Nothing scheduled.</div>'}</div>
-    <div class="note" style="margin-top:18px">Deposit and balance emails drop off automatically once that money has been recorded. A receipt email is added every time you record a payment.</div>`;
-  else if (tab === 'sent') body.innerHTML = `<div class="card"><div class="list">${sent.map(e => { const inv = byId('invoices', e.invoiceId); return `<div class="li" data-act="send-email" data-id="${e.id}"><span class="ic ok">${icon('check')}</span><div class="grow"><div class="t">${esc(EMAIL_LABEL[e.type])}${inv ? ' · ' + esc(inv.number) : ''}</div><div class="s">${esc(custName(byId('customers', e.customerId || inv?.customerId)))} · sent ${fmtD((e.sentAt || '').slice(0, 10))}</div></div></div>`; }).join('') || '<div class="empty">No sent emails yet.</div>'}</div></div>`;
+    <div class="note" style="margin-top:18px">Deposit and balance emails clear themselves once that money has been recorded, and the balance email always asks for what's still unpaid. When you record a payment you're asked whether to send a receipt. Tap <b>Skip</b> on anything you don't want to send.</div>`;
+  else if (tab === 'sent') body.innerHTML = `<div class="card"><div class="list">${done.map(e => { const inv = byId('invoices', e.invoiceId); return `<div class="li" data-act="send-email" data-id="${e.id}"><span class="ic ${e.status === 'sent' ? 'ok' : ''}">${icon(e.status === 'sent' ? 'check' : 'x')}</span><div class="grow"><div class="t">${esc(EMAIL_LABEL[e.type] || 'Email')}${inv ? ' · ' + esc(inv.number) : ''}</div><div class="s">${esc(custName(byId('customers', e.customerId || inv?.customerId)))} · ${why(e)}</div></div></div>`; }).join('') || '<div class="empty">No sent emails yet.</div>'}</div></div>`;
   else templatesEditor(body);
 };
 function templatesEditor(el) {

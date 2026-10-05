@@ -76,7 +76,13 @@ Live at https://joshtilley88-wq.github.io/invoicing/
 * SPA refresh tokens last 24 hours. After that MSAL tries a hidden renewal, which browsers that block third-party cookies (Safari, iPhone apps) usually refuse, so expect **Reconnect Outlook** (one quick redirect) after a day or so without use.
 
 ## Email-due notifications
-* When the app opens, if any queued emails are due today or overdue, it shows one system notification via the service worker ("2 invoice emails due today"), at most once a day. Tapping it opens the email outbox.
+* When the app opens, if any emails that need sending (deposit / balance requests, contracts, questionnaires) are due, it shows one system notification via the service worker ("2 emails ready to send", listing what they are, never amounts), at most once a day. Tapping it opens the email outbox. Receipts never count, nor does the Emails badge include them.
+
+## Outbox and payments
+* **Record payment** saves the payment, clears the invoice's queued deposit / balance emails whose money is now in (`status: 'skipped', skipReason: 'paid'`; they come back if the payment is deleted or the total goes up), then asks **Send a receipt now?** (Send receipt / Print receipt / Skip). Nothing is queued on Skip; a receipt can still be emailed later from the payment's receipt button.
+* The balance email always asks for what's still unpaid. Unsent receipts appear in a separate, optional **Receipts** card, never in Due now.
+* Every outbox card has **Skip** (kept under **Sent & skipped**; tap it to open and send anyway).
+* On app open, `tidyOutbox()` settles paid-up deposit / balance emails and marks queued receipts from an earlier day as skipped (`skipReason: 'old-receipt'`). Nothing is deleted.
 * Permission is only requested from the **Turn on email reminders** button (Settings → Data) or the one-time dashboard prompt, never on page load. On iPhone, notifications only work once the app has been added to the Home Screen (iOS 16.4+).
 * **Limit:** this only happens when the app is opened. Notifications while the app is closed would need a server (Web Push) later.
 

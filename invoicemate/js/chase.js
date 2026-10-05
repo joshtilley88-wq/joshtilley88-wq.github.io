@@ -2,7 +2,9 @@
  * The app keeps its data local, so it tells the server (Supabase function "invoicemate-chase") only what it needs to
  * chase each unpaid invoice: invoice no, amount owing, due date, customer first name, mobile, email, business name,
  * schedule and wording. The server sends the reminders (SMS, email as backup) on schedule, Mon–Sat 8am–7pm Sydney,
- * and keeps a log the app pulls in. This device is identified by a random key (localStorage im.chaseKey); the server
+ * and keeps a log the app pulls in. For email reminders the app also uploads the invoice PDF (js/invoice-pdf.js, showing the
+ * current amount owing) whenever it changes; the server keeps it in a private bucket and deletes it when chasing stops.
+ * Nothing else about the invoice leaves the phone. This device is identified by a random key (localStorage im.chaseKey); the server
  * only stores a hash of it. Nothing here is secret: no API keys. */
 'use strict';
 const IM_CHASE_URL = 'https://opekqrldytqvjziowbqo.supabase.co/functions/v1/invoicemate-chase';
@@ -55,13 +57,30 @@ const Chase = {
         if (map[inv.id] !== h || force) out.push(d);
       }
       for (const id of Object.keys(map)) if (!seen.has(id)) out.push({ invoice_id: id, active: false, reason: 'deleted' });
-      if (!out.length) { if (Date.now() - this.loadState().at > 120000) await this.pull(); return; }
+      if (!out.length) { if (Date.now() - this.loadState().at > 120000) { const st = await this.pull(); await this.syncPdfs(st.chases || []); } return; }
       const res = await this.call({ route: 'sync', chases: out.slice(0, 200) });
       for (const d of out.slice(0, 200)) { if (d.reason === 'deleted') delete map[d.invoice_id]; else map[d.invoice_id] = JSON.stringify(d); }
       localStorage.setItem('im.chaseSent', JSON.stringify(map));
       this.saveState(res); this.applyOptOuts();
+      await this.syncPdfs(res.chases || []);
     })().catch(() => { }).finally(() => { this.busy = null; });
     return this.busy;
+  },
+  /* upload the invoice PDF for each active chase whose PDF on the server is missing or out of date (amount owing changed ...) */
+  async syncPdfs(serverChases) {
+    if (typeof InvoicePDF === 'undefined') return 0;
+    let n = 0;
+    for (const sc of serverChases) {
+      if (sc.status !== 'active') continue;
+      const inv = byId('invoices', sc.invoice_id); if (!inv) continue;
+      const d = this.desiredFor(inv); if (!d.active || !d.email) continue;          // PDFs only go with email reminders
+      const key = InvoicePDF.key(inv); if (sc.pdf_hash === key && sc.pdf_amount_cents === d.amount_cents) continue;
+      try { const p = await InvoicePDF.make(inv); await this.call({ route: 'pdf', invoice_id: inv.id, hash: key, amount_cents: d.amount_cents, content: p.base64 }); sc.pdf_hash = key; sc.pdf_amount_cents = d.amount_cents; n++; }
+      catch (e) { console.warn('chase PDF upload', e && e.message); }
+      if (n >= 20) break;                                                            // the rest go next sync
+    }
+    if (n) this.saveState(Object.assign({}, this.loadState(), { chases: serverChases }));
+    return n;
   },
   async pull() { const res = await this.call({ route: 'state' }); this.saveState(res); this.applyOptOuts(); return res; },
   schedule() { clearTimeout(this.timer); this.timer = setTimeout(() => this.syncNow(), 1500); },

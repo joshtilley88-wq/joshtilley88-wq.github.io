@@ -27,6 +27,7 @@ A voice-first invoicing app for Australian tradies. It's a plain HTML/CSS/vanill
 | `js/draft-ops.js` | The tools' effect on the draft (set_customer, add_item, update_item, remove_item, set_email), draft state for the model, grading |
 | `js/voice-cost.js` | Turn latency metrics + OpenAI pricing for the cost-per-invoice numbers |
 | `js/voicetest.js`, `voice-test/` | **Voice test** screen (menu → Voice test): scripted scenarios with recorded clips, runs any engine, shows the metrics table. `voice-test/results.json` = latest headless benchmark |
+| `js/invoice-pdf.js`, `vendor/jspdf.umd.min.js` | **Invoice PDF** attached to every invoice email (A4, real text, ~6 KB + logo). jsPDF 4.2.1 (MIT), the same library and approach as Allyce's Invoicing app; loaded on demand, cached by the service worker |
 | `js/send.js` | `Sender` (calls the `invoicemate-send` function), email-safe invoice HTML, `sendEntryNow()`, `TTS` (calls `invoicemate-tts`) + voice list |
 | `supabase/functions/invoicemate-send/` | Edge Function: `{to, subject, html, text, reply_to?, attachments?}` → Resend. Test mode forces delivery to Josh |
 | `supabase/functions/invoicemate-tts/` | Edge Function: `{text, voice?}` → OpenAI `gpt-4o-mini-tts` mp3 (≤ 600 chars) |
@@ -49,7 +50,7 @@ Everything stays in the browser on the device. Invoices, customers, expenses and
 ```
 cd /workspace/invoicemate && python3 -m http.server 8792 --bind 127.0.0.1    # then open http://localhost:8792/
 cd tests && npm install          # dev only: playwright-core, tesseract.js (source of the vendored files)
-node parser.test.js && node receipt.test.js && node convo.test.js && node chase.test.js && node voice.test.js && node e2e.js 8792   # e2e mocks both functions + speech
+node parser.test.js && node receipt.test.js && node convo.test.js && node chase.test.js && node voice.test.js && node pdf.test.js && node e2e.js 8792   # e2e mocks both functions + speech
 ```
 
 ## Known limits
@@ -58,7 +59,7 @@ node parser.test.js && node receipt.test.js && node convo.test.js && node chase.
 * **OCR** works well on flat, well-lit receipts. Crumpled, faded thermal or angled photos will need corrections in the form.
 * **Data is local only** (no sync between devices). Allyce's Google Drive backup and Supabase cloud sync are switched off here.
 * **Sending is in TEST MODE.** There's no verified sending domain in Resend yet, so the function sends from `onboarding@resend.dev`, which Resend only delivers to the account owner. Every email is redirected to Josh's own inbox (the Resend account owner) with `[TEST to <real recipient>]` in the subject. To go live, verify a domain in Resend, then set `TEST_MODE = false` and change `FROM` in `supabase/functions/invoicemate-send/index.ts`, and redeploy (see the TODO there).
-* The invoice goes in the email body as HTML. There's no PDF attachment, because the app makes PDFs through the browser's print dialog. The function already accepts `attachments` for later.
+* The invoice goes in the email body as HTML **and** as an attached PDF (see Invoice PDF attachments).
 * Abuse protection is light: a CORS allow-list, a shared `x-im-app` header (it's in the public JS, so it isn't a secret), a per-instance rate limit and size limits. That's fine while every email can only reach Josh. Add real auth before turning test mode off.
 * If the functions aren't reachable, **Send now** is hidden and the compose sheet falls back to Email app / Gmail / Copy plus a small **I sent it myself** link. In a conversation, "yes" saves the invoice and opens the email instead. The voice falls back to the phone's speechSynthesis.
 
@@ -86,6 +87,15 @@ Settings → Voice & prices → **Conversation engine**. All three make the same
 **Voice test** (menu → Voice test): runs scripted scenarios (simple, messy with pauses and "no wait", multi-item, spoken email, correction after read-back) through any engine with recorded clips (`voice-test/*.mp3`, made once with gpt-4o-mini-tts) and shows cost per invoice (from the APIs' usage), reply delay (end of speech → first reply audio, avg and p90) and accuracy against the expected invoice. Headless benchmark: `node tests/voice-bench.js 8792 live,chained,local s1-simple,s2-messy 1` then `node tests/voice-merge.js <live files> <chained/local files>`. In the headless browser there's no Web Speech, so `gpt-4o-mini-transcribe` stands in for Chained/Local (left out of "cost per invoice"; on the phone it's free).
 
 Deploy the two voice functions: `bash supabase/deploy-voice.sh` (copies the shared prompt, deploys `invoicemate-realtime-session` + `invoicemate-brain`; OPENAI_API_KEY is already a function secret).
+
+## Invoice PDF attachments
+Every invoice email InvoiceMate sends attaches the invoice as a PDF named like `INV-1021.pdf`, and keeps the HTML invoice in the body: the voice "send it" (Live, Chained and Local all save + send through `Talk.deliver` → `sendEntryNow`), the outbox **Send now**, **Email it** / **Email invoice**, and payment-chasing email reminders.
+
+* **How it's made (app):** `js/invoice-pdf.js` draws it with jsPDF (vendored, no CDN): logo (shrunk to max 360×120 px so PDFs stay small) or business name, ABN, address, contact, TAX INVOICE / INVOICE, number, issued / due (+ OVERDUE), orange-to-charcoal band, Bill to, an **Amount owing** box, line items, subtotal / GST / total, Paid + Amount owing when part-paid, a **Pay online** box (placeholder text until card payments exist; becomes a real link if `business.payLink` is set), notes / terms, bank details + reference. `draw()` is pure, so `tests/pdf.test.js` runs it in Node. View / PDF now has **Download PDF**.
+* **Sizes:** ~6 KB without a logo, ~30 KB with a busy logo. Resend allows 40 MB per email (after base64); `invoicemate-send` caps attachments at 6 MB.
+* **If the PDF can't be made** (very old phone, script blocked), the email still goes with the HTML invoice; the send isn't blocked.
+* **Payment-chasing emails (server, cron):** the server has no browser and only minimal data, so the **app makes the PDF and uploads it** when it syncs a chase (route `pdf`), only for active chases that have an email address, and again whenever it changes (amount owing after a part payment, items, business details, logo, overdue). It's stored in the **private** Storage bucket `im-chase-pdf` (no policies; only the `invoicemate-chase` function with the service role can read it; 512 KB limit, PDF only) with the amount owing it shows. The cron attaches it to an email reminder only if that amount matches the reminder's amount (otherwise it sends without it), and the email says "Invoice INV-1021 is attached as a PDF". The file is deleted as soon as chasing stops (paid, stopped, opted out, all reminders sent). SMS reminders don't carry a PDF. Migration: `supabase/migrations/20261006_im_chase_pdf.sql` (run by `deploy-chase.sh`).
+* Tests: `node tests/pdf.test.js` (renderer), `tests/e2e.js` (voice send, outbox Send now, chase upload + re-upload after a part payment; mocked functions), `node tests/pdf-live-send.js 8792` (REAL: one Send now email + one chase reminder via dry run + run, then marks it paid; sends 2 test emails to Josh).
 
 ## Automatic payment chasing
 

@@ -60,6 +60,15 @@ function invoiceEmailHtml(inv) {
   ${bank ? `<div style="margin-top:12px;font-size:13px;white-space:pre-wrap">${esc(bank)}\nReference: ${esc(inv.number)}</div>` : ''}</div>`;
 }
 
+/* the invoice PDF for an invoice email (null for other emails, or if the PDF can't be made: the email still goes) */
+const PDF_TYPES = ['invoice', 'balance', 'deposit'];
+async function pdfAttachment(entry) {
+  const inv = entry.invoiceId && byId('invoices', entry.invoiceId);
+  if (!inv || inv.kind === 'quote' || !PDF_TYPES.includes(entry.type) || typeof InvoicePDF === 'undefined') return null;
+  try { const p = await InvoicePDF.make(inv); return { filename: p.filename, content: p.base64, bytes: p.bytes }; }
+  catch (e) { console.warn('PDF not attached:', e && e.message); return null; }
+}
+
 /* build the real email for an outbox entry (with the invoice inline for invoice emails) */
 function emailForSend(entry, v) {
   const inv = entry.invoiceId && byId('invoices', entry.invoiceId);
@@ -84,8 +93,11 @@ async function markEntrySent(entry, v) {
 async function sendEntryNow(entry, v) {
   v = v || composeEmail(entry);
   if (!v.to) throw new Error('There’s no email address to send to');
-  const res = await Sender.send(emailForSend(entry, v));
-  entry.via = 'resend'; entry.resendId = res.id; if (res.testMode) entry.testDeliveredTo = res.deliveredTo;
+  const msg = emailForSend(entry, v), pdf = await pdfAttachment(entry);
+  if (pdf) msg.attachments = [{ filename: pdf.filename, content: pdf.content }];
+  const res = await Sender.send(msg);
+  res.attachment = pdf ? { filename: pdf.filename, bytes: pdf.bytes } : null;
+  entry.via = 'resend'; entry.resendId = res.id; if (res.testMode) entry.testDeliveredTo = res.deliveredTo; if (pdf) entry.pdfAttached = pdf.filename;
   await markEntrySent(entry, v);
   return res;
 }

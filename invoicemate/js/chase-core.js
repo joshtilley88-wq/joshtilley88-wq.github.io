@@ -117,6 +117,7 @@
     const subject = fill(T.subject, v).trim();
     let text = fill(T.email, v).trim();
     if (!text.includes(v.business)) text += `\n\n${v.business}`;
+    if (opts.attached) text += `\n\nInvoice ${v.invoice_no} is attached as a PDF.`;
     const footer = `This reminder was sent on behalf of ${v.business} by InvoiceMate. Don't want these reminders? Unsubscribe: ${links.optout || links.view}`;
     text += `\n\n--\n${footer}`;
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -124,6 +125,7 @@
     const body = fill(T.email, v).trim() + (fill(T.email, v).includes(v.business) ? '' : `\n\n${v.business}`);
     const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2B2F36;max-width:560px">` +
       body.split(/\n{2,}/).map(p => `<p style="margin:0 0 12px">${linkify(p).replace(/\n/g, '<br>')}</p>`).join('') +
+      (opts.attached ? `<p style="margin:0 0 12px;color:#555">Invoice ${esc(v.invoice_no)} is attached as a PDF.</p>` : '') +
       (links.view ? `<p style="margin:18px 0"><a href="${esc(links.view)}" style="background:#F57C00;color:#fff;text-decoration:none;padding:10px 18px;border-radius:999px;font-weight:bold">View invoice ${esc(v.invoice_no)}</a></p>` : '') +
       `<p style="margin:24px 0 0;font-size:12px;color:#888">This reminder was sent on behalf of ${esc(v.business)} by InvoiceMate. Don't want these reminders? <a href="${esc(links.optout || links.view)}" style="color:#888">Unsubscribe</a>.</p></div>`;
     return { key, label: STEP_LABEL[key], sms, smsParts: smsParts(sms), subject, text, html };

@@ -81,9 +81,9 @@ function openCompose(entry, opts = {}) {
   });
   // "Send now" (real sending via the server) is the main action when it's available; otherwise "Email app" is
   const note = $('#em-note', m), nowBtn = $('#em-now', m), openBtn = $('#em-open', m);
-  const manualNote = 'Opens your email app with everything filled in. Attach a PDF if you want one (<b>View / PDF → Save as PDF</b>). If you send it that way, tap <b>I sent it myself</b> so it’s ticked off.';
+  const manualNote = 'Opens your email app with everything filled in. Attach the PDF if you want (<b>View / PDF → Download PDF</b>). If you send it that way, tap <b>I sent it myself</b> so it’s ticked off.';
   const setMode = ready => { nowBtn.hidden = !ready; openBtn.classList.toggle('pri', !ready);
-    note.innerHTML = ready ? `<b>Send now</b> emails it straight from InvoiceMate${inv ? ' with the invoice in the email' : ''} and ticks it off as sent.${Sender.testMode ? ' <b>Test mode:</b> until a sending domain is set up, every email goes to Josh’s inbox, with the real recipient in the subject.' : ''}` : manualNote; };
+    note.innerHTML = ready ? `<b>Send now</b> emails it straight from InvoiceMate${inv && ['invoice', 'balance', 'deposit'].includes(entry.type) ? ' with the invoice in the email and attached as a PDF (' + esc(IMInvoicePdf.fileName(inv.number)) + ')' : ''} and ticks it off as sent.${Sender.testMode ? ' <b>Test mode:</b> until a sending domain is set up, every email goes to Josh’s inbox, with the real recipient in the subject.' : ''}` : manualNote; };
   setMode(Sender.ready); Sender.available().then(r => { if (document.body.contains(m)) setMode(r); });
   nowBtn.onclick = async () => {
     const v = val(); if (!v.to) { toast('Add an email address first'); $('#em-to', m).focus(); return; }

@@ -315,9 +315,10 @@ function receiptDoc(p) {
 V.doc = async (view, [type, id]) => {
   if (type === 'invoice') {
     const inv = byId('invoices', id); if (!inv) { view.innerHTML = '<div class="card empty">Not found</div>'; return; }
-    view.innerHTML = `<div class="doc-actions no-print"><a class="btn" href="#/invoice/${id}">${icon('back')} Back to edit</a><button class="btn pri" id="d-print">${icon('printer')} Print / Save as PDF</button>${inv.kind !== 'quote' ? `<button class="btn" data-act="email-invoice" data-id="${id}">${icon('mail')} Email</button>` : ''}</div>${invoiceDoc(inv)}
-      <p class="small muted no-print" style="text-align:center">Tip: in the print dialog choose <b>Save as PDF</b> as the destination to get a PDF you can attach to an email.</p>`;
+    view.innerHTML = `<div class="doc-actions no-print"><a class="btn" href="#/invoice/${id}">${icon('back')} Back to edit</a><button class="btn pri" id="d-pdf">${icon('download')} Download PDF</button><button class="btn" id="d-print">${icon('printer')} Print</button>${inv.kind !== 'quote' ? `<button class="btn" data-act="email-invoice" data-id="${id}">${icon('mail')} Email</button>` : ''}</div>${invoiceDoc(inv)}
+      <p class="small muted no-print" style="text-align:center">Emails sent from InvoiceMate attach this invoice as a PDF automatically.</p>`;
     $('#d-print').onclick = () => printHTML(invoiceDoc(inv));
+    $('#d-pdf').onclick = async () => { try { const p = await InvoicePDF.make(inv); const a = document.createElement('a'); a.href = URL.createObjectURL(p.blob); a.download = p.filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000); } catch (e) { toast('Couldn’t make the PDF: ' + e.message); } };
   }
 };
 
